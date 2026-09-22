@@ -38,7 +38,7 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
 
 @Test func inPersonSessionsGetAStandingNoteWindow() {
     let plan = planner([]).plan(sessions: [session(9, to: 9, 50)], on: at(9))
-    let notes = blocks(plan) { $0 == .note }
+    let notes = blocks(plan) { if case .note = $0 { return true } else { return false } }
     #expect(notes.count == 1)
     #expect(notes[0].start == at(9, 50))
     #expect(notes[0].end == at(10, 0))
@@ -48,7 +48,7 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
     // Carl writes a note after every session; after a virtual one he's
     // already seated, so the window is there without asking him to stand.
     let plan = planner([]).plan(sessions: [session(9, to: 9, 50, virtual: true)], on: at(9))
-    let notes = blocks(plan) { $0 == .note }
+    let notes = blocks(plan) { if case .note = $0 { return true } else { return false } }
     #expect(notes.count == 1)
     #expect(notes[0].title == "Note")
     #expect(blocks(plan) { $0 == .session(virtual: true) }.count == 1)
@@ -57,7 +57,7 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
 @Test func backToBackSessionsGetWhateverRoomIsLeft() {
     // 9:00-9:50 then 9:55: five minutes is still a note window.
     let tight = planner([]).plan(sessions: [session(9, to: 9, 50), session(9, 55, to: 10, 45)], on: at(9))
-    let notes = blocks(tight) { $0 == .note }
+    let notes = blocks(tight) { if case .note = $0 { return true } else { return false } }
     #expect(notes.count == 2)
     #expect(notes[0].start == at(9, 50))
     #expect(notes[0].end == at(9, 55))          // clipped to the next session
@@ -65,7 +65,7 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
 
 @Test func trulyBackToBackSessionsGetNoNoteWindow() {
     let plan = planner([]).plan(sessions: [session(9, to: 9, 50), session(9, 50, to: 10, 40)], on: at(9))
-    #expect(blocks(plan) { $0 == .note }.count == 1)   // only the last one has room
+    #expect(blocks(plan) { if case .note = $0 { return true } else { return false } }.count == 1)
 }
 
 @Test func aNoteWindowNeverRunsIntoACalendarEvent() {
@@ -74,7 +74,7 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
         events: [CalendarEvent(start: at(9, 55), end: at(10, 30), title: "Call")],
         on: at(9)
     )
-    #expect(blocks(plan) { $0 == .note }.first?.end == at(9, 55))
+    #expect(blocks(plan) { if case .note = $0 { return true } else { return false } }.first?.end == at(9, 55))
 }
 
 @Test func lunchSitsAtItsUsualTimeWhenTheGapIsFree() {

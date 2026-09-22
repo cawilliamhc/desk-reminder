@@ -4,7 +4,7 @@ import Foundation
 /// should be doing with you.
 public enum Phase: Equatable, Sendable {
     case session(until: Date, virtual: Bool)
-    case note(until: Date)
+    case note(until: Date, seated: Bool)
     case upcoming(kind: IntermissionKind, at: Date)
     case running(kind: IntermissionKind, until: Date)
     case open
@@ -12,7 +12,7 @@ public enum Phase: Equatable, Sendable {
     /// How long until the thing on screen is over.
     public func remaining(at now: Date) -> TimeInterval? {
         switch self {
-        case .session(let until, _), .note(let until), .running(_, let until):
+        case .session(let until, _), .note(let until, _), .running(_, let until):
             max(0, until.timeIntervalSince(now))
         case .upcoming(_, let at):
             max(0, at.timeIntervalSince(now))
@@ -24,7 +24,7 @@ public enum Phase: Equatable, Sendable {
     /// What the desk should do. Nil when the phase has no opinion.
     public var deskRule: IntermissionKind.DeskRule? {
         switch self {
-        case .note: .up
+        case .note(_, let seated): seated ? nil : .up
         case .session(_, let virtual): virtual ? .down : nil
         case .upcoming(let kind, _), .running(let kind, _): kind.deskRule
         case .open: nil
@@ -58,8 +58,8 @@ extension Phase {
             switch block.kind {
             case .session(let virtual):
                 return .session(until: block.end, virtual: virtual)
-            case .note:
-                return .note(until: block.end)
+            case .note(let seated):
+                return .note(until: block.end, seated: seated)
             case .intermission(let id):
                 guard let kind = kind(id) else { continue }
                 return startedIntermissions.contains(id)

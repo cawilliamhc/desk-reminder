@@ -11,7 +11,10 @@ struct SidebarView: View {
                 .foregroundStyle(Theme.ink)
                 .padding(.bottom, 4)
 
-            navItem(.plan, label: "Plan", meta: model.plan.isEmpty ? nil : "\(model.intermissionsPlanned) breaks")
+            navItem(
+                .plan, label: "Plan",
+                meta: model.planCommittedAt.map { $0.formatted(date: .omitted, time: .shortened) }
+            )
             navItem(.today, label: "Today", meta: "\(Int((model.today.standingShare * 100).rounded()))%")
             navItem(.settings, label: "Settings", meta: nil)
 

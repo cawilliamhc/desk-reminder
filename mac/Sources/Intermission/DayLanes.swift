@@ -143,14 +143,12 @@ struct DayLanes: View {
         return Theme.color(token: kind.colorToken)
     }
 
-    /// The desk lane: standing and sitting from the height reports, with
+    /// The desk lane: the actual stretches the desk spent up and down, with
     /// session time drawn over the top since the desk is down for those.
     private var deskBars: [(start: Date, end: Date, color: Color)] {
-        var bars: [(Date, Date, Color)] = []
-        for segment in model.computer.segments(on: model.now, now: model.now) where segment.isOnComputer {
-            bars.append((segment.start, segment.end ?? model.now,
-                         model.isStanding == true ? Theme.standing : Theme.sitting))
-        }
+        var bars: [(Date, Date, Color)] = model.heights
+            .segments(on: model.now)
+            .map { ($0.start, $0.end ?? model.now, $0.isStanding ? Theme.standing : Theme.sitting) }
         for block in model.plan {
             if case .session = block.kind, block.start < model.now {
                 bars.append((block.start, min(block.end, model.now), Theme.session))

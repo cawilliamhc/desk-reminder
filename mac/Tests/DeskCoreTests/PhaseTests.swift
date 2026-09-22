@@ -17,7 +17,7 @@ private let stretch = IntermissionKind.defaults.first { $0.id == "stretch" }!
 
 private let plan: [PlanBlock] = [
     PlanBlock(kind: .session(virtual: false), start: at(9), end: at(9, 50), title: "Session"),
-    PlanBlock(kind: .note, start: at(9, 50), end: at(10), title: "Note — standing"),
+    PlanBlock(kind: .note(seated: false), start: at(9, 50), end: at(10), title: "Note — standing"),
     PlanBlock(kind: .open, start: at(10), end: at(14), title: "Open"),
     PlanBlock(kind: .intermission(id: "reading"), start: at(14), end: at(14, 30), title: "Reading"),
     PlanBlock(kind: .session(virtual: true), start: at(15), end: at(15, 50), title: "Session"),
@@ -34,7 +34,7 @@ private func phase(_ now: Date, started: Set<String> = []) -> Phase {
 
 @Test func theNoteWindowSaysToStand() {
     let now = phase(at(9, 55))
-    #expect(now == .note(until: at(10)))
+    #expect(now == .note(until: at(10), seated: false))
     #expect(now.deskRule == .up)
     #expect(now.remaining(at: at(9, 55)) == 300)
 }

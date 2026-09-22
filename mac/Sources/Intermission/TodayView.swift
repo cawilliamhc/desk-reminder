@@ -11,7 +11,10 @@ struct TodayView: View {
                 header
                 DayLanes(model: model)
                 statCards
-                weekChart
+                HStack(alignment: .top, spacing: 12) {
+                    weekChart
+                    UpNextCard(model: model)
+                }
             }
             .padding(.horizontal, 26)
             .padding(.vertical, 22)
@@ -31,7 +34,7 @@ struct TodayView: View {
                     .font(Theme.headline(60))
                     .monospacedDigit()
                     .foregroundStyle(Theme.ink)
-                Text("\(hoursMinutes(model.today.standing)) up · \(hoursMinutes(model.today.sitting)) down")
+                Text("\(hoursMinutes(model.today.standing)) up · \(hoursMinutes(model.today.sitting)) down · \(model.switchesToday) switches")
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.muted)
             }
@@ -58,7 +61,7 @@ struct TodayView: View {
             StatCard(
                 label: "NOTES STANDING",
                 value: "\(model.today.notesStanding) of \(model.today.notesTotal)",
-                hint: "so far today"
+                hint: "so far · \(model.weekNotes.standing) of \(model.weekNotes.total) this week"
             )
             StatCard(
                 label: "OFF THE COMPUTER",
@@ -73,7 +76,7 @@ struct TodayView: View {
             StatCard(
                 label: "IN SESSION",
                 value: hoursMinutes(model.inSessionToday),
-                hint: "seated, kept separate"
+                hint: "of \(hoursMinutes(model.inSessionPlannedToday)) · seated, kept separate"
             )
         }
     }

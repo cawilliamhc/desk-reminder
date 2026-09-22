@@ -80,7 +80,7 @@ struct PlanView: View {
     private var summary: String {
         let sessions = model.shownPlan.filter { if case .session = $0.kind { return true } else { return false } }
         let virtual = model.shownPlan.filter { $0.kind == .session(virtual: true) }.count
-        let notes = model.shownPlan.filter { $0.kind == .note }.count
+        let notes = model.shownPlan.filter { $0.kind == .note(seated: false) }.count
         let suggestions = model.shownPlan.filter(\.isSuggestion)
 
         if sessions.isEmpty && suggestions.isEmpty {
@@ -170,7 +170,7 @@ struct PlanView: View {
         if !sessions.isEmpty {
             rows.append(("In session", hoursMinutes(sessions.reduce(0) { $0 + $1.length }), Theme.session))
         }
-        let notes = model.shownPlan.filter { $0.kind == .note }
+        let notes = model.shownPlan.filter { if case .note = $0.kind { return true } else { return false } }
         if !notes.isEmpty {
             rows.append(("Notes, standing", "\(notes.count) × \(Planner.noteMinutes) min", Theme.standing))
         }

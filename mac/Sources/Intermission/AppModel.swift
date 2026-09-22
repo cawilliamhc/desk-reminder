@@ -42,6 +42,7 @@ final class AppModel {
     private(set) var today: DayRecord
     private(set) var isPresent = false
     private(set) var computer = ComputerLog()
+    private(set) var heights = HeightLog()
     private(set) var plan: [PlanBlock] = []
     /// The day the Plan view is showing. In the evening it opens on tomorrow.
     var planDay: PlanDay = .today { didSet { rebuildPlan() } }
@@ -137,6 +138,7 @@ final class AppModel {
     private func heightReported(_ height: Double, at now: Date) {
         lastReport = now
         timeline.report(height: height, at: now)
+        heights.record(standing: height >= settings.standingThreshold, at: now)
         LastHeight.save(height, directory: Self.supportDirectory)
         if let outcome = coach.heightChanged(height, at: now) { record(outcome) }
     }
@@ -199,6 +201,7 @@ final class AppModel {
         skippedIntermissions = []
         planDay = .today
         computer.prune(before: startOfDay.addingTimeInterval(-7 * 86_400))
+        heights.prune(before: startOfDay.addingTimeInterval(-7 * 86_400))
         rebuildPlan()
         if settings.morningPlan && settings.isDeskDay(now) { selectedView = .plan }
     }
@@ -280,6 +283,9 @@ final class AppModel {
     }
 
     var isPlanCommitted: Bool { plans[shownDate].committedAt != nil }
+    /// When today's plan was committed, for the sidebar - "8:04" says it was
+    /// planned far better than a count of breaks does.
+    var planCommittedAt: Date? { plans[Date()].committedAt }
 
     func commitShownPlan() {
         var day = plans[shownDate]
@@ -322,6 +328,24 @@ final class AppModel {
             settings.intermissions.first { $0.id == id }
                 .map { Theme.color(token: $0.colorToken) } ?? Theme.primary
         }
+    }
+
+    /// The next intermission on the plan that hasn't been started or skipped.
+    var upNext: (kind: IntermissionKind, at: Date)? {
+        for block in plan.sorted(by: { $0.start < $1.start }) {
+            guard case .intermission(let id) = block.kind,
+                  block.end > now,
+                  !startedIntermissions.contains(id),
+                  let kind = settings.intermissions.first(where: { $0.id == id })
+            else { continue }
+            return (kind, block.start)
+        }
+        return nil
+    }
+
+    /// The block the clock is inside, for the Now card's progress bar.
+    var currentBlock: PlanBlock? {
+        plan.first { $0.start <= now && now < $0.end }
     }
 
     /// Intermissions that could stand in for another one.
@@ -393,6 +417,21 @@ final class AppModel {
         schedule.sessions(on: currentDay).reduce(0) { total, session in
             total + min(session.end, Date()).timeIntervalSince(session.start).clampedToZero
         }
+    }
+
+    /// How many times the desk changed state today: the day's restlessness.
+    var switchesToday: Int { max(0, heights.segments(on: currentDay).count - 1) }
+
+    var weekNotes: (standing: Int, total: Int) {
+        week.reduce(into: (0, 0)) { total, day in
+            total.0 += day.notesStanding
+            total.1 += day.notesTotal
+        }
+    }
+
+    /// Everything booked today, whether it has happened yet or not.
+    var inSessionPlannedToday: TimeInterval {
+        schedule.sessions(on: currentDay).reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
     }
 
     var intermissionsDone: Int { startedIntermissions.count }

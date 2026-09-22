@@ -26,6 +26,18 @@ struct NowCard: View {
             Text(aim).font(Theme.ui(12)).foregroundStyle(Theme.ink)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if let progress {
+                // A bar under the countdown, so the time left has a shape.
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Theme.ink.opacity(0.15))
+                        Capsule().fill(Theme.ink).frame(width: geometry.size.width * progress)
+                    }
+                }
+                .frame(height: 3)
+                .padding(.vertical, 2)
+            }
+
             if let desk = deskLine {
                 HStack(spacing: 6) {
                     Text(desk.glyph).font(Theme.headline(13))
@@ -58,7 +70,7 @@ struct NowCard: View {
     private var label: String {
         switch model.phase {
         case .session(_, let virtual): virtual ? "In session · virtual" : "In session"
-        case .note: "Note — standing"
+        case .note(_, let seated): seated ? "Note" : "Note — standing"
         case .upcoming(let kind, _): "Up next · \(kind.name)"
         case .running(let kind, _): kind.name
         case .open: "Open"
@@ -67,7 +79,7 @@ struct NowCard: View {
 
     private var until: String {
         switch model.phase {
-        case .session(let until, _), .note(let until), .running(_, let until):
+        case .session(let until, _), .note(let until, _), .running(_, let until):
             "until \(until.formatted(date: .omitted, time: .shortened))"
         case .upcoming(_, let at):
             "at \(at.formatted(date: .omitted, time: .shortened))"
@@ -80,8 +92,8 @@ struct NowCard: View {
         switch model.phase {
         case .session(_, let virtual):
             virtual ? "Quiet until the note window. No nudges." : "Nothing until this one's done."
-        case .note:
-            "Write the note on your feet."
+        case .note(_, let seated):
+            seated ? "Write the note — you're already sitting for this one." : "Write the note on your feet."
         case .upcoming(let kind, _):
             "\(kind.name), \(kind.minutes) minutes. Off the computer."
         case .running(let kind, _):
@@ -106,6 +118,13 @@ struct NowCard: View {
         case .any:
             return nil
         }
+    }
+
+    /// How far through the current block we are, 0 to 1.
+    private var progress: Double? {
+        guard let block = model.currentBlock, block.length > 0 else { return nil }
+        if case .open = block.kind { return nil }
+        return min(1, max(0, model.now.timeIntervalSince(block.start) / block.length))
     }
 
     private struct Action {
