@@ -183,6 +183,7 @@ final class AppModel {
         }
 
         offerTomorrowIfDayIsDone(now)
+        summariseDayIfDone(now)
 
         let (message, outcome) = coach.tick(at: now)
         if let message, snoozedUntil == nil { say(message) }
@@ -287,6 +288,14 @@ final class AppModel {
     /// planned far better than a count of breaks does.
     var planCommittedAt: Date? { plans[Date()].committedAt }
 
+    /// "Skip planning today": the day runs with no suggestions at all.
+    func skipPlanning() {
+        for block in shownPlan {
+            if case .intermission(let id) = block.kind { apply(.skipped, to: id) }
+        }
+        if planDay == .today { selectedView = .today }
+    }
+
     func commitShownPlan() {
         var day = plans[shownDate]
         day.committedAt = Date()
@@ -352,6 +361,26 @@ final class AppModel {
     var swapCandidates: [IntermissionKind] { settings.intermissions }
 
     // MARK: - The evening offer to plan tomorrow
+
+    /// The day in a sentence, once the last session is behind him.
+    private func summariseDayIfDone(_ now: Date) {
+        guard settings.endOfDaySummary, !settings.paused(at: now), !schedule.isDayOff(now) else { return }
+        guard let lastEnd = schedule.sessions(on: now).map(\.end).max(),
+              now >= lastEnd.addingTimeInterval(1800),          // half an hour after
+              today.atDesk > 0
+        else { return }
+        var record = days[now]
+        guard record.summarisedAt == nil else { return }
+        record.summarisedAt = now
+        days[now] = record
+        days.save()
+
+        say(.endOfDay(
+            percent: Int((today.standingShare * 100).rounded()),
+            notesStanding: today.notesStanding,
+            notesTotal: today.notesTotal
+        ))
+    }
 
     private func offerTomorrowIfDayIsDone(_ now: Date) {
         guard settings.eveningPlan, !settings.paused(at: now), !schedule.isDayOff(now) else { return }

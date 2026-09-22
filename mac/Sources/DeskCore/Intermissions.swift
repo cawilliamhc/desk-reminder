@@ -36,6 +36,30 @@ public struct IntermissionKind: Codable, Equatable, Identifiable, Sendable {
     /// intermissions apart at a glance.
     public var colorToken: String = "chart-1"
 
+    /// Spelled out because a public struct's memberwise initialiser is
+    /// internal, and the app target builds Carl's own intermissions.
+    public init(
+        id: String,
+        name: String,
+        minutes: Int,
+        cadence: Cadence,
+        preference: Preference,
+        deskRule: DeskRule,
+        rule: String,
+        enabled: Bool = true,
+        colorToken: String = "chart-1"
+    ) {
+        self.id = id
+        self.name = name
+        self.minutes = minutes
+        self.cadence = cadence
+        self.preference = preference
+        self.deskRule = deskRule
+        self.rule = rule
+        self.enabled = enabled
+        self.colorToken = colorToken
+    }
+
     public var length: TimeInterval { TimeInterval(minutes * 60) }
 }
 

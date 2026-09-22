@@ -11,6 +11,8 @@ public struct DayRecord: Codable, Equatable, Sendable {
     public var notesTotal: Int = 0
     /// False on a rest day: it neither breaks a streak nor extends one.
     public var isDeskDay: Bool = true
+    /// When the end-of-day summary went out, so it goes once.
+    public var summarisedAt: Date?
 
     public init(day: Date) { self.day = day }
 

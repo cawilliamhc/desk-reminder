@@ -133,6 +133,8 @@ struct PlanView: View {
                 }
             }
 
+            DayStrip(model: model, blocks: model.shownPlan)
+
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {
@@ -149,13 +151,22 @@ struct PlanView: View {
 
             Spacer()
 
-            Button(model.planDay == .today ? "Start the day with this plan" : "Save tomorrow's plan") {
-                model.commitShownPlan()
+            VStack(spacing: 6) {
+                Button(model.planDay == .today ? "Start the day with this plan" : "Save tomorrow's plan") {
+                    model.commitShownPlan()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity)
+                .keyboardShortcut("s", modifiers: .command)
+
+                Button(model.planDay == .today ? "Skip planning today" : "Leave tomorrow unplanned") {
+                    model.skipPlanning()
+                }
+                .buttonStyle(.borderless)
+                .font(Theme.ui(11))
+                .foregroundStyle(Theme.muted)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .frame(maxWidth: .infinity)
-            .keyboardShortcut("s", modifiers: .command)
         }
         .padding(20)
         .frame(width: 272)

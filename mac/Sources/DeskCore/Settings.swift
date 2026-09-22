@@ -30,6 +30,8 @@ public struct Settings: Codable, Equatable, Sendable {
     public var morningPlan: Bool = true
     /// Offer to plan tomorrow when the last session is done.
     public var eveningPlan: Bool = true
+    /// How the day went, once the last session is behind him.
+    public var endOfDaySummary: Bool = true
 
     public init() {}
 

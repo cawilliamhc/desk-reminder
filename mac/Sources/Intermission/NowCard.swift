@@ -40,7 +40,7 @@ struct NowCard: View {
 
             if let desk = deskLine {
                 HStack(spacing: 6) {
-                    Text(desk.glyph).font(Theme.headline(13))
+                    Image(systemName: desk.symbol).font(.system(size: 11, weight: .medium))
                     Text(desk.text).font(Theme.ui(11)).foregroundStyle(Theme.ink)
                 }
             }
@@ -103,18 +103,18 @@ struct NowCard: View {
         }
     }
 
-    private var deskLine: (glyph: String, text: String)? {
+    private var deskLine: (symbol: String, text: String)? {
         guard let rule = model.phase.deskRule else { return nil }
         let height = model.height.map { String(format: "%.1f″", $0) } ?? "—"
         switch rule {
         case .up:
             let there = model.isStanding == true && !model.heightIsAssumed
-            return ("↑", there ? "Desk up · \(height) ✓" : "Raise the desk — \(height) now")
+            return ("arrow.up", there ? "Desk up · \(height) ✓" : "Raise the desk — \(height) now")
         case .down:
             let down = model.isStanding == false
-            return ("↓", down ? "Desk down · \(height)" : "Bring the desk down for this one")
+            return ("arrow.down", down ? "Desk down · \(height)" : "Bring the desk down for this one")
         case .unchanged:
-            return ("=", "Desk stays where it is")
+            return ("equal", "Desk stays where it is")
         case .any:
             return nil
         }

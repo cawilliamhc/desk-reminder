@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Bindable var model: AppModel
+    @State private var isAddingIntermission = false
 
     var body: some View {
         ScrollView {
@@ -53,6 +54,15 @@ struct SettingsView: View {
                 section("Intermissions", "Things to do off the computer. Each one is planned into a gap that fits it.") {
                     ForEach($model.settings.intermissions) { $kind in
                         IntermissionRow(kind: $kind)
+                    }
+                    HStack {
+                        Button("Add an intermission") { isAddingIntermission = true }
+                            .popover(isPresented: $isAddingIntermission) {
+                                NewIntermissionForm(model: model, isPresented: $isAddingIntermission)
+                            }
+                        Text("Ideas: a walk outside, water, eyes off screens")
+                            .font(Theme.ui(11)).foregroundStyle(Theme.muted)
+                        Spacer()
                     }
                     row("Count idle as off the computer after", "A locked screen counts immediately.") {
                         Picker("", selection: $model.settings.idleMinutes) {
@@ -116,6 +126,9 @@ struct SettingsView: View {
                     row("Offer to plan tomorrow", "Ten minutes after your last session, with tomorrow in a sentence.") {
                         Toggle("", isOn: $model.settings.eveningPlan).labelsHidden().toggleStyle(.switch)
                     }
+                    row("End-of-day summary", "How the day went, once the last session is behind you.") {
+                        Toggle("", isOn: $model.settings.endOfDaySummary).labelsHidden().toggleStyle(.switch)
+                    }
                 }
 
                 section("App", "Where Intermission lives on this Mac.") {
@@ -158,9 +171,14 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("Intermission · data in ~/Library/Application Support/com.carlwilliamson.intermission")
-                    .font(Theme.ui(11)).foregroundStyle(Theme.muted)
-                    .padding(.top, 8)
+                HStack {
+                    Text("Intermission · data in ~/Library/Application Support/com.carlwilliamson.intermission")
+                        .font(Theme.ui(11)).foregroundStyle(Theme.muted)
+                    Spacer()
+                    Button("Quit") { NSApp.terminate(nil) }
+                        .controlSize(.small)
+                }
+                .padding(.top, 8)
             }
             .padding(.horizontal, 28)
             .padding(.vertical, 22)
