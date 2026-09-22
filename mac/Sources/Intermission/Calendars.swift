@@ -12,8 +12,8 @@ struct CalendarInfo: Identifiable, Equatable {
     let title: String
     let account: String
     let color: Color
-    /// Birthdays and subscribed feeds: all-day, never block a gap.
-    let isSubscribed: Bool
+    /// Birthdays and subscribed feeds are left out of the list entirely:
+    /// they're all-day, so they could never block a gap anyway.
 }
 
 /// Personal calendars, read-only, through EventKit.
@@ -43,13 +43,13 @@ final class Calendars {
             return
         }
         available = store.calendars(for: .event)
+            .filter { $0.type != .subscription && $0.type != .birthday }
             .map { calendar in
                 CalendarInfo(
                     id: calendar.calendarIdentifier,
                     title: calendar.title,
                     account: calendar.source?.title ?? "Other",
-                    color: calendar.cgColor.map { Color(nsColor: NSColor(cgColor: $0) ?? .gray) } ?? .gray,
-                    isSubscribed: calendar.type == .subscription || calendar.type == .birthday
+                    color: calendar.cgColor.map { Color(nsColor: NSColor(cgColor: $0) ?? .gray) } ?? .gray
                 )
             }
             .sorted { ($0.account, $0.title) < ($1.account, $1.title) }

@@ -77,13 +77,7 @@ struct SettingsView: View {
                                 ForEach(group.calendars) { calendar in
                                     HStack(spacing: 8) {
                                         Circle().fill(calendar.color).frame(width: 9, height: 9)
-                                        VStack(alignment: .leading, spacing: 1) {
-                                            Text(calendar.title).font(Theme.ui(13)).foregroundStyle(Theme.ink)
-                                            if calendar.isSubscribed {
-                                                Text("Subscribed · all-day events are ignored")
-                                                    .font(Theme.ui(11)).foregroundStyle(Theme.muted)
-                                            }
-                                        }
+                                        Text(calendar.title).font(Theme.ui(13)).foregroundStyle(Theme.ink)
                                         Spacer()
                                         Toggle("", isOn: Binding(
                                             get: { model.settings.calendarIDs.contains(calendar.id) },

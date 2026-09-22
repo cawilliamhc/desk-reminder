@@ -47,8 +47,10 @@ public struct CalendarEvent: Equatable, Sendable {
 /// every time a session runs long is a plan you stop trusting - so when the
 /// day slips, the plan stays put and the app says what got missed.
 public struct Planner: Sendable {
-    /// The standing window after an in-person session.
+    /// The window after a session, for writing the note.
     public static let noteMinutes = 10
+    /// Shorter than this and it isn't a window, it's a gap between sessions.
+    public static let minimumNoteMinutes = 5
     public static let dayStartHour = 8
     public static let dayEndHour = 18
 
@@ -69,28 +71,39 @@ public struct Planner: Sendable {
         let dayEnd = calendar.date(bySettingHour: Self.dayEndHour, minute: 0, second: 0, of: day)!
 
         var blocks: [PlanBlock] = []
+        let today = sessions.filter { calendar.isDate($0.start, inSameDayAs: day) }.sorted { $0.start < $1.start }
+        let todaysEvents = events.filter { calendar.isDate($0.start, inSameDayAs: day) }
 
-        for session in sessions.filter({ calendar.isDate($0.start, inSameDayAs: day) }) {
+        for (index, session) in today.enumerated() {
             blocks.append(PlanBlock(
                 kind: .session(virtual: session.mode.isSeated),
                 start: session.start, end: session.end,
                 title: "Session",
                 subline: session.mode.isSeated ? "Virtual · seated" : "In person"
             ))
-            // Virtual sessions are seated, so the note after one isn't a
-            // standing window - it just isn't reserved.
-            if !session.mode.isSeated {
-                let noteEnd = min(session.end.addingTimeInterval(TimeInterval(Self.noteMinutes * 60)), dayEnd)
-                if noteEnd > session.end {
-                    blocks.append(PlanBlock(
-                        kind: .note, start: session.end, end: noteEnd,
-                        title: "Note — standing", subline: nil
-                    ))
-                }
+
+            // A note after every session, as close to it as the day allows -
+            // Carl writes them while the session is still in his head. Back to
+            // back, there's no room, and the plan says so by leaving it out.
+            let wanted = session.end.addingTimeInterval(TimeInterval(Self.noteMinutes * 60))
+            let nextFixed = [
+                today.dropFirst(index + 1).first?.start,
+                todaysEvents.first { $0.start >= session.end }?.start,
+                dayEnd,
+            ].compactMap { $0 }.min() ?? dayEnd
+            let noteEnd = min(wanted, nextFixed)
+            if noteEnd.timeIntervalSince(session.end) >= TimeInterval(Self.minimumNoteMinutes * 60) {
+                blocks.append(PlanBlock(
+                    kind: .note, start: session.end, end: noteEnd,
+                    // Seated after a virtual session; the nudge to stand is
+                    // what "skip virtual" silences, not the note itself.
+                    title: session.mode.isSeated ? "Note" : "Note — standing",
+                    subline: nil
+                ))
             }
         }
 
-        for event in events where calendar.isDate(event.start, inSameDayAs: day) {
+        for event in todaysEvents {
             blocks.append(PlanBlock(
                 kind: .calendarEvent, start: event.start, end: event.end,
                 title: event.title, subline: nil, badge: "Calendar"
