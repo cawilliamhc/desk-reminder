@@ -109,6 +109,15 @@ struct SettingsView: View {
                     }
                 }
 
+                section("Planning", "Shaping the day before it happens.") {
+                    row("Morning plan", "Show the plan once on the first unlock of a working day.") {
+                        Toggle("", isOn: $model.settings.morningPlan).labelsHidden().toggleStyle(.switch)
+                    }
+                    row("Offer to plan tomorrow", "Ten minutes after your last session, with tomorrow in a sentence.") {
+                        Toggle("", isOn: $model.settings.eveningPlan).labelsHidden().toggleStyle(.switch)
+                    }
+                }
+
                 section("App", "Where Intermission lives on this Mac.") {
                     row("Open at login", "Start quietly in the menu bar when you log in.") {
                         Toggle("", isOn: Binding(

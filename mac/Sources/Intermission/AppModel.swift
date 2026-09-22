@@ -2,6 +2,7 @@ import AppKit
 import DeskCore
 import Foundation
 import Observation
+import SwiftUI
 
 /// Everything the views read, and the one place the pieces meet: the adapter,
 /// the day's tally, the coach, the session file and settings.
@@ -25,6 +26,11 @@ enum Paths {
 @Observable
 final class AppModel {
     enum View: String, CaseIterable { case plan, today, settings }
+    enum PlanDay: String, CaseIterable, Identifiable {
+        case today, tomorrow
+        var id: String { rawValue }
+        var title: String { self == .today ? "Today" : "Tomorrow" }
+    }
 
     static var supportDirectory: URL { Paths.support }
     static var sessionsFile: URL { Paths.sessions }
@@ -37,6 +43,12 @@ final class AppModel {
     private(set) var isPresent = false
     private(set) var computer = ComputerLog()
     private(set) var plan: [PlanBlock] = []
+    /// The day the Plan view is showing. In the evening it opens on tomorrow.
+    var planDay: PlanDay = .today { didSet { rebuildPlan() } }
+    private(set) var shownPlan: [PlanBlock] = []
+    private(set) var shownEvents: [CalendarEvent] = []
+    /// True when the schedule has changed since this day's plan was committed.
+    private(set) var scheduleMovedSincePlanning = false
     private(set) var phase: Phase = .open
     private(set) var events: [CalendarEvent] = []
     /// The break Carl came back from that nobody has named yet.
@@ -46,10 +58,11 @@ final class AppModel {
     private(set) var now = Date()
     private(set) var skippedIntermissions: Set<String> = []
     let calendars = Calendars()
-    var settings: Settings { didSet { settingsChanged(oldValue) } }
+    var settings: DeskCore.Settings { didSet { settingsChanged(oldValue) } }
 
     private var coach: Coach
     private var days: DayStore
+    private var plans: PlanStore
     private var schedule: SessionSchedule
     private let settingsStore: SettingsStore
     private let presence = Presence()
@@ -66,6 +79,7 @@ final class AppModel {
         self.settings = settings
         self.coach = Coach(settings: settings)
         self.days = DayStore(url: Self.supportDirectory.appending(path: "days.json"))
+        self.plans = PlanStore(url: Self.supportDirectory.appending(path: "plans.json"))
         self.schedule = SessionSchedule(url: Self.sessionsFile)
         self.timeline = DeskTimeline(
             standingThreshold: settings.standingThreshold,
@@ -166,6 +180,8 @@ final class AppModel {
             if coach.isStanding != true { say(.stillSitting) }
         }
 
+        offerTomorrowIfDayIsDone(now)
+
         let (message, outcome) = coach.tick(at: now)
         if let message, snoozedUntil == nil { say(message) }
         if let outcome { record(outcome) }
@@ -181,6 +197,7 @@ final class AppModel {
         today = days[now]
         startedIntermissions = []
         skippedIntermissions = []
+        planDay = .today
         computer.prune(before: startOfDay.addingTimeInterval(-7 * 86_400))
         rebuildPlan()
         if settings.morningPlan && settings.isDeskDay(now) { selectedView = .plan }
@@ -202,37 +219,135 @@ final class AppModel {
         days.save()
     }
 
-    private func say(_ message: CoachMessage) {
-        notifier.post(CoachCopy(tone: settings.tone).text(for: message), sound: settings.sound)
+    private func say(_ message: CoachMessage, category: String = Notifier.category) {
+        notifier.post(
+            CoachCopy(tone: settings.tone).text(for: message),
+            sound: settings.sound,
+            category: category
+        )
+    }
+
+    /// Opens the window on tomorrow's plan - what the evening notification does.
+    func showTomorrow() {
+        planDay = .tomorrow
+        selectedView = .plan
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func handle(_ action: Notifier.Action) {
         switch action {
         case .snooze: snoozedUntil = Date().addingTimeInterval(600)
         case .pauseToday: pause(until: Calendar.current.startOfDay(for: Date().addingTimeInterval(86_400)))
+        case .planTomorrow: showTomorrow()
         }
     }
 
     // MARK: - Plan and intermissions
 
+    var shownDate: Date {
+        planDay == .today ? Date() : Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+    }
+
     func rebuildPlan() {
-        let day = Date()
         schedule.reload()
+        plan = blocks(for: Date())
+        events = calendars.events(on: Date(), calendarIDs: settings.calendarIDs)
+
+        let shown = shownDate
+        shownPlan = planDay == .today ? plan : blocks(for: shown)
+        shownEvents = planDay == .today ? events : calendars.events(on: shown, calendarIDs: settings.calendarIDs)
+
+        let saved = plans[shown]
+        scheduleMovedSincePlanning = saved.committedAt != nil
+            && !saved.scheduleSignature.isEmpty
+            && saved.scheduleSignature != schedule.sessions(on: shown).signature
+    }
+
+    /// The plan for a day: its sessions and events, laid out around whatever
+    /// Carl has already changed about it.
+    private func blocks(for day: Date) -> [PlanBlock] {
         // A day off is a day off: no plan, nothing to nudge about.
-        guard !schedule.isDayOff(day) else {
-            plan = []
-            events = []
-            return
-        }
-        events = calendars.events(on: day, calendarIDs: settings.calendarIDs)
+        guard !schedule.isDayOff(day) else { return [] }
         let planner = Planner(intermissions: settings.intermissions.filter { !skippedIntermissions.contains($0.id) })
-        plan = planner.plan(
+        return planner.plan(
             sessions: schedule.sessions,
-            events: events,
+            events: calendars.events(on: day, calendarIDs: settings.calendarIDs),
             on: day,
+            edits: plans[day].edits,
             configuredHours: schedule.workingHours(on: day),
             workingWindows: schedule.workingWindows(on: day)
         )
+    }
+
+    var isPlanCommitted: Bool { plans[shownDate].committedAt != nil }
+
+    func commitShownPlan() {
+        var day = plans[shownDate]
+        day.committedAt = Date()
+        day.scheduleSignature = schedule.sessions(on: shownDate).signature
+        plans[shownDate] = day
+        plans.save()
+        rebuildPlan()
+        if planDay == .today { selectedView = .today }
+    }
+
+    func apply(_ change: PlanEdit.Change, to intermissionID: String) {
+        var day = plans[shownDate]
+        day.apply(PlanEdit(intermissionID: intermissionID, change: change))
+        plans[shownDate] = day
+        plans.save()
+        rebuildPlan()
+    }
+
+    func undoEdits(for intermissionID: String) {
+        var day = plans[shownDate]
+        day.clearEdits(for: intermissionID)
+        plans[shownDate] = day
+        plans.save()
+        rebuildPlan()
+    }
+
+    func addOneOff(name: String, minutes: Int, at start: Date) {
+        apply(.added(name: name, minutes: minutes, at: start), to: "custom-\(UUID().uuidString.prefix(8))")
+    }
+
+    /// The colour for a block, with the intermission's own choice honoured.
+    func color(for kind: PlanBlock.Kind) -> Color {
+        switch kind {
+        case .session: Theme.session
+        case .note: Theme.standing
+        case .calendarEvent: Theme.calendar
+        case .open: Theme.border
+        case .intermission(let id):
+            settings.intermissions.first { $0.id == id }
+                .map { Theme.color(token: $0.colorToken) } ?? Theme.primary
+        }
+    }
+
+    /// Intermissions that could stand in for another one.
+    var swapCandidates: [IntermissionKind] { settings.intermissions }
+
+    // MARK: - The evening offer to plan tomorrow
+
+    private func offerTomorrowIfDayIsDone(_ now: Date) {
+        guard settings.eveningPlan, !settings.paused(at: now), !schedule.isDayOff(now) else { return }
+        let todays = schedule.sessions(on: now)
+        guard let lastEnd = todays.map(\.end).max() else { return }
+        // Ten minutes after the last session, so the note comes first.
+        guard now >= lastEnd.addingTimeInterval(600) else { return }
+
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now
+        var record = plans[tomorrow]
+        guard record.promptedAt == nil, record.committedAt == nil else { return }
+        record.promptedAt = now
+        plans[tomorrow] = record
+        plans.save()
+
+        let sessions = schedule.sessions(on: tomorrow)
+        say(.planTomorrow(
+            sessions: sessions.count,
+            virtual: sessions.filter { $0.mode.isSeated }.count
+        ), category: Notifier.planCategory)
     }
 
     /// Time off and holidays come from Practice Studio; desk days are Carl's
@@ -315,7 +430,7 @@ final class AppModel {
     var week: [DayRecord] { days.recent(7, endingOn: Date()) }
     var streak: Int { days.streak(endingOn: Date(), goal: settings.standingGoal) }
 
-    private func settingsChanged(_ old: Settings) {
+    private func settingsChanged(_ old: DeskCore.Settings) {
         guard settings != old else { return }
         coach.settings = settings
         timeline.standingThreshold = settings.standingThreshold

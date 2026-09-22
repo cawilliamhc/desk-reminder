@@ -32,6 +32,9 @@ public struct IntermissionKind: Codable, Equatable, Identifiable, Sendable {
     /// The one-line explanation shown in Settings.
     public var rule: String
     public var enabled: Bool = true
+    /// A token from the app's chart palette, so Carl can tell two
+    /// intermissions apart at a glance.
+    public var colorToken: String = "chart-1"
 
     public var length: TimeInterval { TimeInterval(minutes * 60) }
 }
@@ -41,22 +44,26 @@ extension IntermissionKind {
         IntermissionKind(
             id: "lunch", name: "Lunch", minutes: 50, cadence: .daily,
             preference: .around(12 * 60 + 30), deskRule: .any,
-            rule: "First gap of 45 min or more after the target time. Nudge if it slips."
+            rule: "First gap of 45 min or more after the target time. Nudge if it slips.",
+            colorToken: "chart-5"
         ),
         IntermissionKind(
             id: "reading", name: "Reading", minutes: 30, cadence: .daily,
             preference: .afternoon, deskRule: .down,
-            rule: "Largest remaining gap of the day."
+            rule: "Largest remaining gap of the day.",
+            colorToken: "chart-3"
         ),
         IntermissionKind(
             id: "stretch", name: "Stretch", minutes: 10, cadence: .twiceDaily,
             preference: .beforeSeated, deskRule: .unchanged,
-            rule: "Short gap before a seated session, or after 90 min sitting."
+            rule: "Short gap before a seated session, or after 90 min sitting.",
+            colorToken: "chart-6"
         ),
         IntermissionKind(
             id: "call", name: "Call a friend", minutes: 20, cadence: .weekly(.thursday),
             preference: .lateAfternoon, deskRule: .any,
-            rule: "Any gap of 20 min or more. Skips days with a personal call already booked."
+            rule: "Any gap of 20 min or more. Skips days with a personal call already booked.",
+            colorToken: "chart-7"
         ),
     ]
 }

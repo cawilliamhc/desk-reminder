@@ -15,9 +15,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     enum Action: String {
         case snooze = "SNOOZE"
         case pauseToday = "PAUSE_TODAY"
+        case planTomorrow = "PLAN_TOMORROW"
     }
 
-    static let category = "NOTE_WINDOW"
+    nonisolated static let category = "NOTE_WINDOW"
+    nonisolated static let planCategory = "PLAN_TOMORROW_OFFER"
     /// Called on the main actor when Carl taps a button.
     var onAction: ((Action) -> Void)?
 
@@ -31,6 +33,17 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                 actions: [
                     UNNotificationAction(identifier: Action.snooze.rawValue, title: "Snooze 10 min"),
                     UNNotificationAction(identifier: Action.pauseToday.rawValue, title: "Pause for today"),
+                ],
+                intentIdentifiers: []
+            ),
+            UNNotificationCategory(
+                identifier: Self.planCategory,
+                actions: [
+                    UNNotificationAction(
+                        identifier: Action.planTomorrow.rawValue,
+                        title: "Plan tomorrow",
+                        options: .foreground
+                    )
                 ],
                 intentIdentifiers: []
             )
@@ -72,7 +85,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        guard let action = Action(rawValue: response.actionIdentifier) else { return }
+        // Clicking the notification itself, not a button, opens the plan too.
+        let action = Action(rawValue: response.actionIdentifier)
+            ?? (response.actionIdentifier == UNNotificationDefaultActionIdentifier
+                && response.notification.request.content.categoryIdentifier == Self.planCategory
+                ? .planTomorrow : nil)
+        guard let action else { return }
         await MainActor.run { self.onAction?(action) }
     }
 }

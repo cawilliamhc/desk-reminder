@@ -135,7 +135,7 @@ struct NowCard: View {
         case .note: Theme.standing.opacity(0.22)
         case .session: Theme.session.opacity(0.3)
         case .upcoming(let kind, _), .running(let kind, _):
-            PlanRow.color(for: .intermission(id: kind.id)).opacity(0.28)
+            model.color(for: .intermission(id: kind.id)).opacity(0.28)
         case .open: Theme.background
         }
     }

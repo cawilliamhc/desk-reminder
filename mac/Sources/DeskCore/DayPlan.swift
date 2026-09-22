@@ -27,6 +27,8 @@ public struct DayPlan: Codable, Equatable, Sendable {
     public var day: Date
     public var edits: [PlanEdit] = []
     public var committedAt: Date?
+    /// When the evening prompt for this day's plan went out, so it goes once.
+    public var promptedAt: Date?
     /// The sessions as they were when this was planned. A mismatch later is
     /// how the app knows to say "this was made before the 2:00 moved".
     public var scheduleSignature: String = ""

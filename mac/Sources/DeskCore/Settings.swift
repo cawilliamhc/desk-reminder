@@ -28,6 +28,8 @@ public struct Settings: Codable, Equatable, Sendable {
     /// EventKit calendar identifiers Carl has chosen to read.
     public var calendarIDs: Set<String> = []
     public var morningPlan: Bool = true
+    /// Offer to plan tomorrow when the last session is done.
+    public var eveningPlan: Bool = true
 
     public init() {}
 

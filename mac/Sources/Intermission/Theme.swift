@@ -9,6 +9,24 @@ enum Theme {
     static let primary = Color(hex: 0x3f6b52)
     static let border = Color(hex: 0xdcd5c9)
 
+    /// The chart palette, straight from Practice Studio's tokens
+    /// (client/src/index.css, light mode). Eight of them, so an intermission
+    /// can be told apart from its neighbours.
+    static let palette: [(token: String, name: String, color: Color)] = [
+        ("chart-1", "Green", Color(h: 145, s: 20, l: 42)),
+        ("chart-2", "Terracotta", Color(h: 14, s: 45, l: 52)),
+        ("chart-3", "Gold", Color(h: 38, s: 48, l: 50)),
+        ("chart-4", "Blue", Color(h: 205, s: 26, l: 50)),
+        ("chart-5", "Mauve", Color(h: 300, s: 14, l: 52)),
+        ("chart-6", "Violet", Color(h: 255, s: 30, l: 55)),
+        ("chart-7", "Rose", Color(h: 340, s: 40, l: 55)),
+        ("chart-8", "Amber", Color(h: 28, s: 70, l: 50)),
+    ]
+
+    static func color(token: String) -> Color {
+        palette.first { $0.token == token }?.color ?? primary
+    }
+
     static let standing = Color(hex: 0x568168)         // chart-1
     static let calendar = Color(hex: 0xbc674e)         // chart-2
     static let reading = Color(hex: 0xbd9042)          // chart-3
@@ -34,6 +52,25 @@ enum Theme {
 }
 
 extension Color {
+    /// The tokens are written as HSL, so they're read as HSL rather than
+    /// converted by hand and drifting from the source.
+    init(h: Double, s: Double, l: Double) {
+        let saturation = s / 100
+        let lightness = l / 100
+        let c = (1 - abs(2 * lightness - 1)) * saturation
+        let x = c * (1 - abs((h / 60).truncatingRemainder(dividingBy: 2) - 1))
+        let m = lightness - c / 2
+        let (r, g, b): (Double, Double, Double) = switch h {
+        case ..<60: (c, x, 0)
+        case ..<120: (x, c, 0)
+        case ..<180: (0, c, x)
+        case ..<240: (0, x, c)
+        case ..<300: (x, 0, c)
+        default: (c, 0, x)
+        }
+        self.init(.sRGB, red: r + m, green: g + m, blue: b + m)
+    }
+
     init(hex: UInt32) {
         self.init(
             .sRGB,

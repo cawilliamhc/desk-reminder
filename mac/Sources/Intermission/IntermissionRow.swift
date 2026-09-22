@@ -8,10 +8,28 @@ struct IntermissionRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(PlanRow.color(for: .intermission(id: kind.id)))
-                .frame(width: 8, height: 8)
-                .padding(.top, 4)
+            // The colour swatch is also the colour picker.
+            Menu {
+                ForEach(Theme.palette, id: \.token) { entry in
+                    Button {
+                        kind.colorToken = entry.token
+                    } label: {
+                        Label {
+                            Text(entry.name + (entry.token == kind.colorToken ? " ✓" : ""))
+                        } icon: {
+                            Image(systemName: "circle.fill").foregroundStyle(entry.color)
+                        }
+                    }
+                }
+            } label: {
+                Circle()
+                    .fill(Theme.color(token: kind.colorToken))
+                    .frame(width: 12, height: 12)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 16)
+            .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(kind.name).font(Theme.ui(13, weight: .medium)).foregroundStyle(Theme.ink)

@@ -14,7 +14,7 @@ struct DayLanes: View {
             lane("Planned", height: 12) { width in
                 ForEach(model.plan) { block in
                     bar(from: block.start, to: block.end, width: width,
-                        color: PlanRow.color(for: block.kind).opacity(block.kind == .open ? 0 : 0.55))
+                        color: model.color(for: block.kind).opacity(block.kind == .open ? 0 : 0.55))
                 }
             }
             lane("Calendar", height: 14) { width in
@@ -119,11 +119,12 @@ struct DayLanes: View {
     private func computerColor(_ segment: ComputerSegment) -> Color {
         if segment.isOnComputer { return Theme.ink.opacity(0.22) }
         guard let label = segment.label else { return .clear }   // away, unnamed: a gap
-        return switch label.lowercased() {
-        case "lunch": Theme.lunch
-        case "reading": Theme.reading
-        default: Theme.primary
+        // Named breaks take their intermission's colour, so the Computer lane
+        // and the Planned lane agree about what lunch looks like.
+        guard let kind = model.settings.intermissions.first(where: { $0.name == label }) else {
+            return Theme.primary
         }
+        return Theme.color(token: kind.colorToken)
     }
 
     /// The desk lane: standing and sitting from the height reports, with

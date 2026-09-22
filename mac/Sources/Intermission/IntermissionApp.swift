@@ -64,6 +64,11 @@ struct MenuBarView: View {
 
             Divider()
 
+            Button("Plan tomorrow") {
+                model.showTomorrow()
+                openWindow(id: "main")
+            }
+            .keyboardShortcut("t", modifiers: .command)
             Button("Open Intermission") {
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)

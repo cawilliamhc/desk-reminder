@@ -8,6 +8,8 @@ public enum CoachMessage: Equatable, Sendable {
     case goalReached(percent: Int)
     case newStreak(days: Int, best: Int)
     case endOfDay(percent: Int, notesStanding: Int, notesTotal: Int)
+    /// After the last session: tomorrow, in a sentence, with an offer to shape it.
+    case planTomorrow(sessions: Int, virtual: Int)
 }
 
 public struct CoachCopy: Sendable {
@@ -59,6 +61,22 @@ public struct CoachCopy: Sendable {
             case .dry: "\(days) days over goal. \(tail)"
             case .warm: "\(days) days over the line in a row. \(tail)"
             case .playful: "\(days) days over the line. \(tail) Tomorrow decides it."
+            }
+        case .planTomorrow(let sessions, let virtual):
+            let count = switch sessions {
+            case 0: "Nothing booked tomorrow"
+            case 1: "One session tomorrow"
+            default: "\(sessions) sessions tomorrow"
+            }
+            let seated = virtual > 0 ? ", \(virtual) of them seated" : ""
+            return switch tone {
+            case .dry: "\(count)\(seated). Plan it?"
+            case .warm: "\(count)\(seated). Want to shape tomorrow before you go?"
+            case .playful: pick([
+                "\(count)\(seated). Shall we find the gaps before they find you?",
+                "That's today done. \(count)\(seated) — worth two minutes now?",
+                "\(count)\(seated). Tomorrow goes better when it's been thought about once.",
+            ])
             }
         case .endOfDay(let percent, let standing, let total):
             return switch tone {

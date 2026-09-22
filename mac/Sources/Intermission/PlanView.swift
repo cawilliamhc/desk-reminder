@@ -16,6 +16,18 @@ struct PlanView: View {
     private var agenda: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 12) {
+                    Picker("", selection: $model.planDay) {
+                        ForEach(AppModel.PlanDay.allCases) { Text($0.title).tag($0) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
+                    Spacer()
+                    if model.isPlanCommitted {
+                        Text("Planned").font(Theme.ui(11)).foregroundStyle(Theme.primary)
+                    }
+                }
                 Text(greeting)
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.muted)
@@ -23,9 +35,20 @@ struct PlanView: View {
                     .font(Theme.headline(24))
                     .foregroundStyle(Theme.ink)
                     .lineSpacing(3)
-                Text("Intermissions are placed in the gaps that fit them. Start, swap or skip any of them.")
+                Text("Intermissions are placed in the gaps that fit them. Move, swap or skip any of them.")
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.muted)
+                if model.scheduleMovedSincePlanning {
+                    HStack(spacing: 8) {
+                        Text("The schedule has changed since you planned this day. Your changes are kept; the rest has been laid out again.")
+                            .font(Theme.ui(11))
+                            .foregroundStyle(Theme.ink)
+                        Spacer()
+                    }
+                    .padding(8)
+                    .background(Theme.reading.opacity(0.2))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
             }
             .padding(.horizontal, 24)
             .padding(.top, 22)
@@ -33,9 +56,10 @@ struct PlanView: View {
 
             ScrollView {
                 VStack(spacing: 3) {
-                    ForEach(model.plan) { block in
+                    ForEach(model.shownPlan) { block in
                         PlanRow(block: block, model: model)
                     }
+                    AddOneOffRow(model: model)
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 8)
@@ -45,30 +69,32 @@ struct PlanView: View {
     }
 
     private var greeting: String {
+        let date = model.shownDate.formatted(.dateTime.weekday(.wide).month(.wide).day())
+        guard model.planDay == .today else { return "Tomorrow · \(date)" }
         let hour = Calendar.current.component(.hour, from: Date())
         let part = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"
-        return "\(part) · \(Date().formatted(.dateTime.weekday(.wide).month(.wide).day()))"
+        return "\(part) · \(date)"
     }
 
     /// The day in a sentence, built from what's actually on the plan.
     private var summary: String {
-        let sessions = model.plan.filter { if case .session = $0.kind { return true } else { return false } }
-        let virtual = model.plan.filter { $0.kind == .session(virtual: true) }.count
-        let notes = model.plan.filter { $0.kind == .note }.count
-        let suggestions = model.plan.filter(\.isSuggestion)
+        let sessions = model.shownPlan.filter { if case .session = $0.kind { return true } else { return false } }
+        let virtual = model.shownPlan.filter { $0.kind == .session(virtual: true) }.count
+        let notes = model.shownPlan.filter { $0.kind == .note }.count
+        let suggestions = model.shownPlan.filter(\.isSuggestion)
 
         if sessions.isEmpty && suggestions.isEmpty {
-            return "Nothing on the books today."
+            return model.planDay == .today ? "Nothing on the books today." : "Nothing on the books tomorrow."
         }
         var parts: [String] = []
         if !sessions.isEmpty {
             let count = sessions.count == 1 ? "One session" : "\(spell(sessions.count)) sessions"
             parts.append(virtual > 0 ? "\(count), \(spell(virtual)) virtual" : count)
         }
-        if !model.events.isEmpty {
-            parts.append(model.events.count == 1
+        if !model.shownEvents.isEmpty {
+            parts.append(model.shownEvents.count == 1
                 ? "one thing from your calendar"
-                : "\(spell(model.events.count)) things from your calendar")
+                : "\(spell(model.shownEvents.count)) things from your calendar")
         }
         var sentence = parts.joined(separator: ", ") + "."
         if !suggestions.isEmpty {
@@ -93,7 +119,8 @@ struct PlanView: View {
 
     private var shape: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Today's shape").font(Theme.ui(13, weight: .semibold)).foregroundStyle(Theme.ink)
+            Text(model.planDay == .today ? "Today's shape" : "Tomorrow's shape")
+                .font(Theme.ui(13, weight: .semibold)).foregroundStyle(Theme.ink)
 
             VStack(spacing: 6) {
                 ForEach(shapeRows, id: \.label) { row in
@@ -109,7 +136,8 @@ struct PlanView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Yesterday").font(Theme.ui(13, weight: .semibold)).foregroundStyle(Theme.ink)
+                Text(model.planDay == .today ? "Yesterday" : "Today so far")
+                    .font(Theme.ui(13, weight: .semibold)).foregroundStyle(Theme.ink)
                 Text(yesterday).font(Theme.ui(12)).foregroundStyle(Theme.muted)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
@@ -121,10 +149,13 @@ struct PlanView: View {
 
             Spacer()
 
-            Button("Start the day with this plan") { model.selectedView = .today }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity)
+            Button(model.planDay == .today ? "Start the day with this plan" : "Save tomorrow's plan") {
+                model.commitShownPlan()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity)
+            .keyboardShortcut("s", modifiers: .command)
         }
         .padding(20)
         .frame(width: 272)
@@ -135,31 +166,31 @@ struct PlanView: View {
 
     private var shapeRows: [(label: String, value: String, color: Color)] {
         var rows: [(String, String, Color)] = []
-        let sessions = model.plan.filter { if case .session = $0.kind { return true } else { return false } }
+        let sessions = model.shownPlan.filter { if case .session = $0.kind { return true } else { return false } }
         if !sessions.isEmpty {
             rows.append(("In session", hoursMinutes(sessions.reduce(0) { $0 + $1.length }), Theme.session))
         }
-        let notes = model.plan.filter { $0.kind == .note }
+        let notes = model.shownPlan.filter { $0.kind == .note }
         if !notes.isEmpty {
             rows.append(("Notes, standing", "\(notes.count) × \(Planner.noteMinutes) min", Theme.standing))
         }
-        if !model.events.isEmpty {
-            rows.append(("Calendar", "\(model.events.count) · \(minutesOnly(model.events.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }))", Theme.calendar))
+        if !model.shownEvents.isEmpty {
+            rows.append(("Calendar", "\(model.shownEvents.count) · \(minutesOnly(model.shownEvents.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }))", Theme.calendar))
         }
-        for block in model.plan where block.isSuggestion {
+        for block in model.shownPlan where block.isSuggestion {
             rows.append((
                 block.title,
                 "\(block.start.formatted(date: .omitted, time: .shortened)) · \(minutesOnly(block.length))",
-                PlanRow.color(for: block.kind)
+                model.color(for: block.kind)
             ))
         }
-        let open = model.plan.filter { $0.kind == .open }.reduce(0) { $0 + $1.length }
+        let open = model.shownPlan.filter { $0.kind == .open }.reduce(0) { $0 + $1.length }
         if open > 0 { rows.append(("Open", hoursMinutes(open), Theme.border)) }
         return rows.map { (label: $0.0, value: $0.1, color: $0.2) }
     }
 
     private var yesterday: String {
-        let record = model.week.dropLast().last
+        let record = model.planDay == .today ? model.week.dropLast().last : model.week.last
         guard let record, record.atDesk > 0 else { return "No desk time logged." }
         return "Stood \(Int((record.standingShare * 100).rounded()))% of \(hoursMinutes(record.atDesk)) at the desk, \(record.notesStanding) of \(record.notesTotal) notes standing."
     }
@@ -168,21 +199,8 @@ struct PlanView: View {
 struct PlanRow: View {
     let block: PlanBlock
     @Bindable var model: AppModel
-
-    static func color(for kind: PlanBlock.Kind) -> Color {
-        switch kind {
-        case .session: Theme.session
-        case .note: Theme.standing
-        case .calendarEvent: Theme.calendar
-        case .open: Theme.border
-        case .intermission(let id):
-            switch id {
-            case "lunch": Theme.lunch
-            case "reading": Theme.reading
-            default: Theme.primary
-            }
-        }
-    }
+    @State private var isMoving = false
+    @State private var movingTo = Date()
 
     private var isOpen: Bool { block.kind == .open }
 
@@ -195,7 +213,7 @@ struct PlanRow: View {
                 .padding(.top, 6)
 
             RoundedRectangle(cornerRadius: 1)
-                .fill(Self.color(for: block.kind))
+                .fill(model.color(for: block.kind))
                 .frame(width: 3)
                 .padding(.trailing, 10)
 
@@ -221,14 +239,54 @@ struct PlanRow: View {
                 Text("\(block.start.formatted(date: .omitted, time: .shortened)) – \(block.end.formatted(date: .omitted, time: .shortened))")
                     .font(Theme.ui(11)).monospacedDigit().foregroundStyle(Theme.muted)
                 if case .intermission(let id) = block.kind {
-                    Button("Skip") { model.skipIntermission(id) }
+                    Button("Move") { movingTo = block.start; isMoving = true }
                         .buttonStyle(.borderless)
                         .font(Theme.ui(11))
+                        .popover(isPresented: $isMoving) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Move \(block.title)").font(Theme.ui(12, weight: .medium))
+                                DatePicker("", selection: $movingTo, displayedComponents: .hourAndMinute)
+                                    .labelsHidden()
+                                    .datePickerStyle(.stepperField)
+                                HStack {
+                                    Button("Cancel") { isMoving = false }
+                                    Spacer()
+                                    Button("Move") {
+                                        model.apply(.moved(to: movingTo), to: id)
+                                        isMoving = false
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .keyboardShortcut(.return)
+                                }
+                            }
+                            .padding(12)
+                            .frame(width: 220)
+                        }
+
+                    Menu("Swap") {
+                        ForEach(model.swapCandidates.filter { $0.id != id }, id: \.id) { kind in
+                            Button(kind.name) { model.apply(.swapped(for: kind.id), to: id) }
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .font(Theme.ui(11))
+                    .frame(width: 58)
+
+                    Button("Skip") { model.apply(.skipped, to: id) }
+                        .buttonStyle(.borderless)
+                        .font(Theme.ui(11))
+
+                    if block.badge == "Yours" {
+                        Button("Undo") { model.undoEdits(for: id) }
+                            .buttonStyle(.borderless)
+                            .font(Theme.ui(11))
+                            .foregroundStyle(Theme.muted)
+                    }
                 }
             }
             .padding(.vertical, 5)
             .padding(.horizontal, 10)
-            .background(isOpen ? .clear : Self.color(for: block.kind).opacity(0.18))
+            .background(isOpen ? .clear : model.color(for: block.kind).opacity(0.18))
             .clipShape(RoundedRectangle(cornerRadius: 7))
         }
         .opacity(isOpen ? 0.7 : 1)
