@@ -44,6 +44,10 @@ class Coach:
             self._started = None
             self.record(True, now)
 
+    def cancel(self):
+        """Drop a reminder in progress without counting it either way (pausing)."""
+        self._started = None
+
     def tick(self, now):
         if not self.waiting:
             return

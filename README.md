@@ -28,6 +28,20 @@ the handset display but don't move the desk. This app never writes to the port.
 - Menu: current height, adapter status, "Stood for X of Y notes this week", and
   **I just finished a session** for a manual trigger.
 - Desk movement outside those windows is ignored and not recorded (the desk is shared).
+- The menu-bar title shows the live height (🧍 at or above the standing height). After a
+  restart it shows the last known height as `~29.3″` until the desk moves again; the reminder
+  logic only ever uses live reports, since someone may have moved the desk meanwhile.
+
+## Settings (from the menu)
+
+- **Pause for 1 hour / for today, Resume.** Sessions that end while paused get no reminder
+  and aren't counted. Pausing drops a reminder already in progress. The title shows ⏸.
+- **Standing height:** 38/40/42/44″, or **Use current height**, which counts from 1″ below
+  where the desk is now. It's only offered above 35″, so a click while sitting can't make
+  sitting count as standing.
+- **Sound** on/off for reminders.
+
+Saved in `~/Library/Application Support/desk-reminder/settings.json`.
 
 ## Files
 
