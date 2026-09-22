@@ -1,6 +1,20 @@
+import AppKit
 import DeskCore
 import EventKit
 import Foundation
+import SwiftUI
+
+/// A calendar as Settings needs to show it: several accounts use the same
+/// names ("Personal Calendar" twice, two US holiday feeds), so the account
+/// and the calendar's own colour are what tell them apart.
+struct CalendarInfo: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let account: String
+    let color: Color
+    /// Birthdays and subscribed feeds: all-day, never block a gap.
+    let isSubscribed: Bool
+}
 
 /// Personal calendars, read-only, through EventKit.
 ///
@@ -11,7 +25,7 @@ import Foundation
 final class Calendars {
     private let store = EKEventStore()
     private(set) var authorized = false
-    private(set) var available: [(id: String, title: String)] = []
+    private(set) var available: [CalendarInfo] = []
 
     func requestAccess() async {
         do {
@@ -28,7 +42,17 @@ final class Calendars {
             available = []
             return
         }
-        available = store.calendars(for: .event).map { ($0.calendarIdentifier, $0.title) }
+        available = store.calendars(for: .event)
+            .map { calendar in
+                CalendarInfo(
+                    id: calendar.calendarIdentifier,
+                    title: calendar.title,
+                    account: calendar.source?.title ?? "Other",
+                    color: calendar.cgColor.map { Color(nsColor: NSColor(cgColor: $0) ?? .gray) } ?? .gray,
+                    isSubscribed: calendar.type == .subscription || calendar.type == .birthday
+                )
+            }
+            .sorted { ($0.account, $0.title) < ($1.account, $1.title) }
     }
 
     /// Events on `day` from the chosen calendars. All-day events are left out:

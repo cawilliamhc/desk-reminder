@@ -69,17 +69,34 @@ struct SettingsView: View {
                 section("Calendars", "Read-only. Events block the gaps intermissions would use.") {
                     row("Practice Studio", sessionsDetail) { EmptyView() }
                     if model.calendars.authorized {
-                        ForEach(model.calendars.available, id: \.id) { calendar in
-                            row(calendar.title, "") {
-                                Toggle("", isOn: Binding(
-                                    get: { model.settings.calendarIDs.contains(calendar.id) },
-                                    set: { on in
-                                        if on { model.settings.calendarIDs.insert(calendar.id) }
-                                        else { model.settings.calendarIDs.remove(calendar.id) }
+                        ForEach(calendarsByAccount, id: \.account) { group in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(group.account)
+                                    .font(Theme.ui(11, weight: .semibold))
+                                    .foregroundStyle(Theme.muted)
+                                ForEach(group.calendars) { calendar in
+                                    HStack(spacing: 8) {
+                                        Circle().fill(calendar.color).frame(width: 9, height: 9)
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(calendar.title).font(Theme.ui(13)).foregroundStyle(Theme.ink)
+                                            if calendar.isSubscribed {
+                                                Text("Subscribed · all-day events are ignored")
+                                                    .font(Theme.ui(11)).foregroundStyle(Theme.muted)
+                                            }
+                                        }
+                                        Spacer()
+                                        Toggle("", isOn: Binding(
+                                            get: { model.settings.calendarIDs.contains(calendar.id) },
+                                            set: { on in
+                                                if on { model.settings.calendarIDs.insert(calendar.id) }
+                                                else { model.settings.calendarIDs.remove(calendar.id) }
+                                            }
+                                        ))
+                                        .labelsHidden().toggleStyle(.switch)
                                     }
-                                ))
-                                .labelsHidden().toggleStyle(.switch)
+                                }
                             }
+                            .padding(.bottom, 4)
                         }
                     } else {
                         row("Personal calendars", "Intermission hasn't been given access yet.") {
@@ -156,6 +173,14 @@ struct SettingsView: View {
             detail += " · last report \(Int(Date().timeIntervalSince(last)))s ago"
         }
         return detail
+    }
+
+    /// Grouped by account, so two calendars called "Personal Calendar" are
+    /// told apart by where they come from.
+    private var calendarsByAccount: [(account: String, calendars: [CalendarInfo])] {
+        Dictionary(grouping: model.calendars.available, by: \.account)
+            .map { (account: $0.key, calendars: $0.value) }
+            .sorted { $0.account < $1.account }
     }
 
     private var sessionsDetail: String {
