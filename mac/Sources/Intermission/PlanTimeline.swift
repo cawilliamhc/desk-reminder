@@ -120,11 +120,12 @@ struct OpenSpace: View {
                     HStack(spacing: 6) {
                         Text("\(minutesOnly(block.length)) open")
                             .font(Theme.ui(11))
-                            .foregroundStyle(Theme.muted)
-                        if isHovering, !candidates.isEmpty {
+                            .foregroundStyle(isHovering ? Theme.ink : Theme.muted)
+                        if !candidates.isEmpty {
                             Menu("Fill it") {
                                 ForEach(candidates, id: \.id) { kind in
-                                    Button("\(kind.name) · \(Int(min(kind.length, block.length) / 60)) min") {
+                                    // The whole gap; drag the edge to shrink it.
+                                    Button("\(kind.name) · \(Int(block.length / 60)) min") {
                                         model.fill(block, with: kind)
                                     }
                                 }

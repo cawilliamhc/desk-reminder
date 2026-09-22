@@ -324,24 +324,27 @@ final class AppModel {
         rebuildPlan()
     }
 
-    /// Fill an empty stretch with something: the button on an open block.
+    /// Fill an empty stretch with something.
+    ///
+    /// It takes the WHOLE gap, not the intermission's usual length: an eighty
+    /// minute hole filled with lunch is eighty minutes of lunch, and the
+    /// bottom edge is there to shrink it. Clamping it to fifty and making him
+    /// stretch it back was the wrong way round.
     func fill(_ gap: PlanBlock, with kind: IntermissionKind) {
-        let length = min(kind.length, gap.length)
-        let start = gap.start
+        let minutes = max(5, Int(gap.length / 60))
         if settings.intermissions.contains(where: { $0.id == kind.id }) {
-            apply(.moved(to: start), to: kind.id)
-            if length < kind.length { apply(.resized(minutes: Int(length / 60)), to: kind.id) }
+            apply(.moved(to: gap.start), to: kind.id)
+            apply(.resized(minutes: minutes), to: kind.id)
         } else {
-            addOneOff(name: kind.name, minutes: Int(length / 60), at: start)
+            addOneOff(name: kind.name, minutes: minutes, at: gap.start)
         }
     }
 
-    /// What could go in a gap: everything that fits, longest first.
+    /// What can go in a gap: anything switched on, since filling is his
+    /// choice rather than the planner's. Longest first, as a hint at fit.
     func candidates(for gap: PlanBlock) -> [IntermissionKind] {
-        settings.intermissions
-            .filter { $0.enabled && min($0.length, gap.length) >= min($0.shortestLength, gap.length) }
-            .filter { gap.length >= $0.shortestLength }
-            .sorted { $0.minutes > $1.minutes }
+        guard gap.length >= 5 * 60 else { return [] }
+        return settings.intermissions.filter(\.enabled).sorted { $0.minutes > $1.minutes }
     }
 
     /// Nudging a block with the keyboard, for when a drag is the wrong tool.
