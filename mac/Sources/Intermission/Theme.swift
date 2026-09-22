@@ -33,6 +33,8 @@ enum Theme {
     static let session = Color(hex: 0x5e85a1)          // chart-4
     static let lunch = Color(hex: 0x967396)            // chart-5
     static let sitting = border
+    /// The current-time line, matching Practice Studio's calendar (red-500).
+    static let now = Color(hex: 0xef4444)
 
     /// Headlines are GT Ultra Light, which Carl has licensed and which ships
     /// inside the bundle. New York (the system serif) stands in if the font

@@ -5,31 +5,24 @@ import SwiftUI
 /// in the day it wants to sit.
 struct IntermissionRow: View {
     @Binding var kind: IntermissionKind
+    @State private var isPickingColor = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            // The colour swatch is also the colour picker.
-            Menu {
-                ForEach(Theme.palette, id: \.token) { entry in
-                    Button {
-                        kind.colorToken = entry.token
-                    } label: {
-                        Label {
-                            Text(entry.name + (entry.token == kind.colorToken ? " ✓" : ""))
-                        } icon: {
-                            Image(systemName: "circle.fill").foregroundStyle(entry.color)
-                        }
-                    }
-                }
-            } label: {
+            // The colour swatch is also the colour picker. A popover rather
+            // than a menu: AppKit draws menu images as flat black templates,
+            // which made every swatch in the list look the same.
+            Button { isPickingColor = true } label: {
                 Circle()
                     .fill(Theme.color(token: kind.colorToken))
-                    .frame(width: 12, height: 12)
+                    .frame(width: 13, height: 13)
+                    .overlay(Circle().stroke(Theme.border, lineWidth: 1))
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .frame(width: 16)
+            .buttonStyle(.plain)
             .padding(.top, 2)
+            .popover(isPresented: $isPickingColor, arrowEdge: .bottom) {
+                colorPicker
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(kind.name).font(Theme.ui(13, weight: .medium)).foregroundStyle(Theme.ink)
@@ -49,6 +42,33 @@ struct IntermissionRow: View {
         .background(Theme.background)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .opacity(kind.enabled ? 1 : 0.55)
+    }
+
+    private var colorPicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(kind.name) colour").font(Theme.ui(12, weight: .medium)).foregroundStyle(Theme.ink)
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(30), spacing: 6), count: 4), spacing: 6) {
+                ForEach(Theme.palette, id: \.token) { entry in
+                    Button {
+                        kind.colorToken = entry.token
+                        isPickingColor = false
+                    } label: {
+                        Circle()
+                            .fill(entry.color)
+                            .frame(width: 24, height: 24)
+                            .overlay(
+                                Circle().stroke(
+                                    entry.token == kind.colorToken ? Theme.ink : Theme.border,
+                                    lineWidth: entry.token == kind.colorToken ? 2 : 1
+                                )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help(entry.name)
+                }
+            }
+        }
+        .padding(12)
     }
 
     private func detail(_ label: String, _ value: String) -> some View {

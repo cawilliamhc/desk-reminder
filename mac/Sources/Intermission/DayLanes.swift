@@ -11,7 +11,7 @@ struct DayLanes: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            lane("Planned", height: 12) { width in
+            lane("Planned", height: 12, dot: true) { width in
                 ForEach(model.plan) { block in
                     bar(from: block.start, to: block.end, width: width,
                         color: model.color(for: block.kind).opacity(block.kind == .open ? 0 : 0.55))
@@ -41,7 +41,8 @@ struct DayLanes: View {
     // MARK: - Pieces
 
     private func lane<Content: View>(
-        _ title: String, height: CGFloat, @ViewBuilder content: @escaping (CGFloat) -> Content
+        _ title: String, height: CGFloat, dot: Bool = false,
+        @ViewBuilder content: @escaping (CGFloat) -> Content
     ) -> some View {
         HStack(spacing: 12) {
             Text(title).font(Theme.ui(11)).foregroundStyle(Theme.muted)
@@ -50,7 +51,7 @@ struct DayLanes: View {
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 5).fill(Theme.background)
                     content(geometry.size.width)
-                    nowLine(width: geometry.size.width)
+                    nowLine(width: geometry.size.width, dot: dot)
                 }
             }
             .frame(height: height)
@@ -67,12 +68,27 @@ struct DayLanes: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func nowLine(width: CGFloat) -> some View {
-        Rectangle()
-            .fill(Theme.ink)
-            .frame(width: 1.5)
+    /// Where we are in the day. Red, with a dot at its head on the top lane,
+    /// the same shape the Practice Studio calendar uses. Hidden outside the
+    /// day's own hours rather than pinned to an edge, where it would claim
+    /// the morning starts at whatever time it is now.
+    @ViewBuilder
+    private func nowLine(width: CGFloat, dot: Bool) -> some View {
+        if model.now >= date(startHour), model.now <= date(endHour) {
+            ZStack(alignment: .top) {
+                Rectangle()
+                    .fill(Theme.now)
+                    .frame(width: 1)
+                if dot {
+                    Circle()
+                        .fill(Theme.now)
+                        .frame(width: 7, height: 7)
+                        .offset(y: -4)
+                }
+            }
             .offset(x: offset(model.now, width: width))
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var axis: some View {
