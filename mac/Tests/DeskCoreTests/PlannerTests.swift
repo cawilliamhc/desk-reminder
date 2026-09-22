@@ -21,6 +21,13 @@ private func planner(_ kinds: [IntermissionKind] = IntermissionKind.defaults) ->
     Planner(calendar: calendar, intermissions: kinds)
 }
 
+/// A day shaped like Carl's: in around 9:30, last session ends at 4:50. The
+/// plan's window is read from these, so tests about placement need a real
+/// day around whatever they're checking.
+private func fullDay(_ extra: [PublishedSession] = []) -> [PublishedSession] {
+    ([session(10, to: 10, 50), session(16, to: 16, 50)] + extra).sorted { $0.start < $1.start }
+}
+
 private func blocks(_ plan: [PlanBlock], _ match: (PlanBlock.Kind) -> Bool) -> [PlanBlock] {
     plan.filter { match($0.kind) }
 }
@@ -82,7 +89,7 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
 @Test func lunchMovesAndSaysWhyWhenTheUsualTimeIsBusy() {
     let lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
     let plan = planner([lunch]).plan(
-        sessions: [session(12, to: 13, 30)],                    // sitting right on lunch
+        sessions: fullDay([session(12, to: 13, 30)]),           // a session sitting right on lunch
         on: at(9)
     )
     let block = intermission(plan, "lunch")
@@ -93,20 +100,21 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
 @Test func readingTakesTheLargestGapAndNotTheMorning() {
     let reading = IntermissionKind.defaults.first { $0.id == "reading" }!
     let plan = planner([reading]).plan(
-        sessions: [session(9, to: 9, 50), session(13, to: 13, 20), session(16, to: 16, 50)],
+        sessions: [session(10, to: 10, 50), session(13, to: 13, 20), session(16, to: 16, 50)],
         on: at(9)
     )
-    // Biggest gap is 10:00-13:00, but reading is an afternoon habit, so it
-    // takes the back of that gap rather than mid-morning.
+    // Biggest gap is 11:00-13:00, but reading is an afternoon habit, so it
+    // takes the back of that gap rather than late morning.
     let block = intermission(plan, "reading")
-    #expect(block?.start == at(12))
-    #expect(block?.end == at(12, 30))
+    #expect(block != nil)
+    #expect(block!.start >= at(12), "reading should not land in the morning; got \(block!.start)")
+    #expect(block!.end <= at(16))
 }
 
 @Test func readingMovesToAnotherGapWhenTheBigOneIsTaken() {
     let reading = IntermissionKind.defaults.first { $0.id == "reading" }!
     let plan = planner([reading]).plan(
-        sessions: [session(9, to: 9, 50), session(10, to: 13, 20), session(16, to: 16, 50)],
+        sessions: [session(10, to: 13, 20), session(16, to: 16, 50)],
         on: at(9)
     )
     let block = intermission(plan, "reading")!
@@ -116,8 +124,11 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
 
 @Test func aWeeklyIntermissionOnlyAppearsOnItsDay() {
     let call = IntermissionKind.defaults.first { $0.id == "call" }!   // Thursday
-    let tuesday = planner([call]).plan(sessions: [session(9, to: 9, 50)], on: at(9))
-    let thursday = planner([call]).plan(sessions: [session(9, to: 9, 50, day: 24)], on: at(9, day: 24))
+    let tuesday = planner([call]).plan(sessions: fullDay(), on: at(9))
+    let thursday = planner([call]).plan(
+        sessions: [session(10, to: 10, 50, day: 24), session(16, to: 16, 50, day: 24)],
+        on: at(9, day: 24)
+    )
     #expect(intermission(tuesday, "call") == nil)
     #expect(intermission(thursday, "call") != nil)
 }
@@ -125,14 +136,14 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
 @Test func aDisabledIntermissionIsNeverPlaced() {
     var lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
     lunch.enabled = false
-    let plan = planner([lunch]).plan(sessions: [session(9, to: 9, 50)], on: at(9))
+    let plan = planner([lunch]).plan(sessions: fullDay(), on: at(9))
     #expect(intermission(plan, "lunch") == nil)
 }
 
 @Test func stretchPrefersTheGapBeforeASeatedSession() {
     let stretch = IntermissionKind.defaults.first { $0.id == "stretch" }!
     let plan = planner([stretch]).plan(
-        sessions: [session(9, to: 9, 50), session(14, to: 14, 50, virtual: true)],
+        sessions: [session(10, to: 10, 50), session(14, to: 14, 50, virtual: true)],
         on: at(9)
     )
     let block = intermission(plan, "stretch")
@@ -143,7 +154,7 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
 @Test func calendarEventsAreFixedAndBlockGaps() {
     let lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
     let event = CalendarEvent(start: at(12, 15), end: at(13, 30), title: "Dentist")
-    let plan = planner([lunch]).plan(sessions: [], events: [event], on: at(9))
+    let plan = planner([lunch]).plan(sessions: fullDay(), events: [event], on: at(9))
     let calendarBlocks = blocks(plan) { $0 == .calendarEvent }
     #expect(calendarBlocks.first?.title == "Dentist")
     #expect(calendarBlocks.first?.badge == "Calendar")
@@ -154,7 +165,7 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
 
 @Test func nothingOverlapsAnythingElse() {
     let plan = planner().plan(
-        sessions: [session(9, to: 9, 50), session(10, to: 10, 50, virtual: true), session(14, to: 14, 50)],
+        sessions: fullDay([session(11, to: 11, 50, virtual: true), session(14, to: 14, 50)]),
         events: [CalendarEvent(start: at(13), end: at(13, 30), title: "Call")],
         on: at(9)
     )
@@ -163,9 +174,56 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
     }
 }
 
-@Test func theDayIsCoveredWithOpenTimeBetweenBlocks() {
-    let plan = planner([]).plan(sessions: [session(9, to: 9, 50)], on: at(9))
+@Test func theDayRunsFromJustBeforeTheFirstSessionToJustAfterTheLast() {
+    // Carl is in at 9:30 for a 10:00, not at eight.
+    let plan = planner([]).plan(sessions: [session(10, to: 10, 50), session(15, to: 15, 50)], on: at(9))
     let open = blocks(plan) { $0 == .open }
-    #expect(open.first?.start == at(8))            // the day window starts at 8
-    #expect(open.last?.end == at(18))              // and ends at 6
+    #expect(open.first?.start == at(9, 30))
+    #expect(open.last?.end == at(16, 20))
+}
+
+@Test func aDayWithNoSessionsFallsBackToTheDefaultHours() {
+    let window = planner([]).workday(sessions: [], on: at(9))
+    #expect(window.start == at(Planner.dayStartHour))
+    #expect(window.end == at(Planner.dayEndHour))
+}
+
+@Test func aCalendarEventCanStretchTheDay() {
+    let window = planner([]).workday(
+        sessions: [session(10, to: 10, 50)],
+        events: [CalendarEvent(start: at(17), end: at(18), title: "Supervision")],
+        on: at(9)
+    )
+    #expect(window.start == at(9, 30))
+    #expect(window.end == at(18, 30))
+}
+
+
+@Test func configuredHoursSetTheDayWhenNothingIsBooked() {
+    let hours = DateInterval(start: at(9, 30), end: at(17))
+    let window = planner([]).workday(sessions: [], on: at(9), configuredHours: hours)
+    #expect(window == hours)
+}
+
+@Test func sessionsOutsideTheUsualHoursWidenTheDay() {
+    let hours = DateInterval(start: at(9, 30), end: at(17))
+    let window = planner([]).workday(
+        sessions: [session(10, to: 10, 50), session(18, to: 18, 50)],   // an evening one
+        on: at(9),
+        configuredHours: hours
+    )
+    #expect(window.start == at(9, 30))          // still in at half nine
+    #expect(window.end == at(19, 20))           // but the evening session stretches it
+}
+
+@Test func theMorningBelongsToCarlNotToTheFirstSession() {
+    // In at 9:30; first session at 11. Nothing should be offered before 9:30.
+    let hours = DateInterval(start: at(9, 30), end: at(17))
+    let plan = planner().plan(
+        sessions: [session(11, to: 11, 50), session(15, to: 15, 50)],
+        on: at(9),
+        configuredHours: hours
+    )
+    #expect(plan.first?.start == at(9, 30))
+    #expect(plan.allSatisfy { $0.start >= at(9, 30) })
 }

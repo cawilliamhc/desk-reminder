@@ -150,7 +150,7 @@ final class AppModel {
         )
 
         schedule.reload()
-        let inSession = schedule.session(covering: now) != nil
+        let inSession = schedule.session(covering: now) != nil || schedule.isDayOff(now)
         for session in schedule.endings(after: lastCheck, until: now) {
             // A virtual session is seated; "skip virtual" only silences the
             // nudge, the note window still counts.
@@ -218,10 +218,25 @@ final class AppModel {
     func rebuildPlan() {
         let day = Date()
         schedule.reload()
+        // A day off is a day off: no plan, nothing to nudge about.
+        guard !schedule.isDayOff(day) else {
+            plan = []
+            events = []
+            return
+        }
         events = calendars.events(on: day, calendarIDs: settings.calendarIDs)
         let planner = Planner(intermissions: settings.intermissions.filter { !skippedIntermissions.contains($0.id) })
-        plan = planner.plan(sessions: schedule.sessions, events: events, on: day)
+        plan = planner.plan(
+            sessions: schedule.sessions,
+            events: events,
+            on: day,
+            configuredHours: schedule.workingHours(on: day)
+        )
     }
+
+    /// Time off and holidays come from Practice Studio; desk days are Carl's
+    /// own setting. Either one makes today a day the app stays quiet.
+    var isDayOff: Bool { schedule.isDayOff(Date()) || !settings.isDeskDay(Date()) }
 
     func startIntermission(_ id: String) {
         startedIntermissions.insert(id)

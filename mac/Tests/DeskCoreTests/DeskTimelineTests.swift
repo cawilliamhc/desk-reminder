@@ -74,3 +74,28 @@ private func timeline(assumed: Double? = nil) -> DeskTimeline {
     t.report(height: 39.9, at: at(9))
     #expect(t.isStanding == false)
 }
+
+
+@Test func workingHoursAndDaysOffComeFromTheFile() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+    let json = """
+    {"sessions": [], "hours": [{"day": 1, "startMinutes": 570, "endMinutes": 1020}],
+     "daysOff": ["2026-11-26"], "ends": []}
+    """
+    try json.write(to: url, atomically: true, encoding: .utf8)
+
+    var schedule = SessionSchedule(url: url)
+    schedule.reload()
+
+    // day 1 is Tuesday in Practice Studio's 0=Mon numbering.
+    let tuesday = calendar.date(from: DateComponents(year: 2026, month: 9, day: 22, hour: 12))!
+    let wednesday = calendar.date(from: DateComponents(year: 2026, month: 9, day: 23, hour: 12))!
+    let hours = schedule.workingHours(on: tuesday, calendar: calendar)
+    #expect(hours?.start == calendar.date(from: DateComponents(year: 2026, month: 9, day: 22, hour: 9, minute: 30)))
+    #expect(hours?.end == calendar.date(from: DateComponents(year: 2026, month: 9, day: 22, hour: 17)))
+    #expect(schedule.workingHours(on: wednesday, calendar: calendar) == nil)
+
+    let thanksgiving = calendar.date(from: DateComponents(year: 2026, month: 11, day: 26, hour: 12))!
+    #expect(schedule.isDayOff(thanksgiving, calendar: calendar))
+    #expect(!schedule.isDayOff(tuesday, calendar: calendar))
+}

@@ -51,8 +51,12 @@ public struct Planner: Sendable {
     public static let noteMinutes = 10
     /// Shorter than this and it isn't a window, it's a gap between sessions.
     public static let minimumNoteMinutes = 5
-    public static let dayStartHour = 8
+    /// Fallback window, used only when a day has no sessions to read it from.
+    public static let dayStartHour = 9
     public static let dayEndHour = 18
+    /// How long before the first session, and after the last, the day is
+    /// treated as his: arriving, settling, writing the last note.
+    public static let edgeMinutes = 30
 
     public var calendar: Calendar
     public var intermissions: [IntermissionKind]
@@ -62,13 +66,56 @@ public struct Planner: Sendable {
         self.intermissions = intermissions
     }
 
+    /// The hours the plan covers.
+    ///
+    /// Read from the day itself: Carl is in the office half an hour or so
+    /// before his first session, not at eight, and a plan that offers him a
+    /// stretch at 8:10 is describing somebody else's morning. A day with no
+    /// sessions falls back to the constants above.
+    public func workday(
+        sessions: [PublishedSession],
+        events: [CalendarEvent] = [],
+        on day: Date,
+        configuredHours: DateInterval? = nil
+    ) -> DateInterval {
+        let fallbackStart = calendar.date(bySettingHour: Self.dayStartHour, minute: 0, second: 0, of: day)!
+        let fallbackEnd = calendar.date(bySettingHour: Self.dayEndHour, minute: 0, second: 0, of: day)!
+
+        let todays = sessions.filter { calendar.isDate($0.start, inSameDayAs: day) }
+        let todaysEvents = events.filter { calendar.isDate($0.start, inSameDayAs: day) }
+        let starts = todays.map(\.start) + todaysEvents.map(\.start)
+        let ends = todays.map(\.end) + todaysEvents.map(\.end)
+        guard let first = starts.min(), let last = ends.max() else {
+            // Nothing booked: his configured working hours, else the fallback.
+            return configuredHours ?? DateInterval(start: fallbackStart, end: fallbackEnd)
+        }
+        let edge = TimeInterval(Self.edgeMinutes * 60)
+        let fromSessions = DateInterval(
+            start: first.addingTimeInterval(-edge),
+            end: last.addingTimeInterval(edge)
+        )
+        guard let configured = configuredHours else { return fromSessions }
+        // Configured hours say when he's there; the sessions can only widen
+        // that, for the evening one that runs past the usual close.
+        return DateInterval(
+            start: min(configured.start, fromSessions.start),
+            end: max(configured.end, fromSessions.end)
+        )
+    }
+
     public func plan(
         sessions: [PublishedSession],
         events: [CalendarEvent] = [],
-        on day: Date
+        on day: Date,
+        edits: [PlanEdit] = [],
+        workday: DateInterval? = nil,
+        configuredHours: DateInterval? = nil
     ) -> [PlanBlock] {
-        let dayStart = calendar.date(bySettingHour: Self.dayStartHour, minute: 0, second: 0, of: day)!
-        let dayEnd = calendar.date(bySettingHour: Self.dayEndHour, minute: 0, second: 0, of: day)!
+        let window = workday ?? self.workday(
+            sessions: sessions, events: events, on: day, configuredHours: configuredHours
+        )
+        let dayStart = window.start
+        let dayEnd = window.end
 
         var blocks: [PlanBlock] = []
         let today = sessions.filter { calendar.isDate($0.start, inSameDayAs: day) }.sorted { $0.start < $1.start }
@@ -110,8 +157,54 @@ public struct Planner: Sendable {
             ))
         }
 
-        // Intermissions go into what's left, in priority order.
-        for kind in intermissions where kind.enabled && runsToday(kind, on: day) {
+        // Carl's own changes first, so the suggestions lay out around them
+        // rather than the other way round.
+        let skipped = Set(edits.compactMap { edit -> String? in
+            if case .skipped = edit.change { return edit.intermissionID }
+            return nil
+        })
+        let swappedAway = Set(edits.compactMap { edit -> String? in
+            if case .swapped = edit.change { return edit.intermissionID }
+            return nil
+        })
+
+        for edit in edits {
+            switch edit.change {
+            case .moved(let start):
+                guard let kind = intermissions.first(where: { $0.id == edit.intermissionID }) else { continue }
+                blocks.append(fixed(kind, at: start, blocks: blocks, subline: "Moved by you"))
+            case .added(let name, let minutes, let start):
+                blocks.append(PlanBlock(
+                    kind: .intermission(id: edit.intermissionID),
+                    start: start,
+                    end: start.addingTimeInterval(TimeInterval(minutes * 60)),
+                    title: name,
+                    subline: collides(start, minutes: minutes, with: blocks) ? "Overlaps what's booked" : "Added by you",
+                    badge: "Yours"
+                ))
+            case .swapped(let replacement):
+                guard let kind = intermissions.first(where: { $0.id == replacement }) else { continue }
+                let slots = gaps(around: blocks, from: dayStart, to: dayEnd)
+                guard let slot = place(kind, in: slots, blocks: blocks, day: day) else { continue }
+                blocks.append(PlanBlock(
+                    kind: .intermission(id: kind.id),
+                    start: slot.start,
+                    end: slot.start.addingTimeInterval(kind.length),
+                    title: kind.name,
+                    subline: "Swapped in by you",
+                    badge: "Yours"
+                ))
+            case .skipped:
+                continue
+            }
+        }
+
+        let edited = Set(edits.map(\.intermissionID))
+        // Then the untouched suggestions, into what's left.
+        for kind in intermissions
+        where kind.enabled && runsToday(kind, on: day)
+            && !skipped.contains(kind.id) && !swappedAway.contains(kind.id)
+            && !edited.contains(kind.id) && !blocks.contains(where: { $0.kind == .intermission(id: kind.id) }) {
             let slots = gaps(around: blocks, from: dayStart, to: dayEnd)
             guard let slot = place(kind, in: slots, blocks: blocks, day: day) else { continue }
             blocks.append(PlanBlock(
@@ -143,6 +236,28 @@ public struct Planner: Sendable {
     private struct Slot {
         var start: Date
         var subline: String?
+    }
+
+    /// A block Carl placed himself. It keeps its time even when the day has
+    /// moved under it - the plan says it overlaps rather than quietly moving
+    /// what he asked for.
+    private func fixed(_ kind: IntermissionKind, at start: Date, blocks: [PlanBlock], subline: String) -> PlanBlock {
+        PlanBlock(
+            kind: .intermission(id: kind.id),
+            start: start,
+            end: start.addingTimeInterval(kind.length),
+            title: kind.name,
+            subline: collides(start, minutes: kind.minutes, with: blocks) ? "Overlaps what's booked" : subline,
+            badge: "Yours"
+        )
+    }
+
+    private func collides(_ start: Date, minutes: Int, with blocks: [PlanBlock]) -> Bool {
+        let end = start.addingTimeInterval(TimeInterval(minutes * 60))
+        return blocks.contains { block in
+            guard !isOpen(block) else { return false }
+            return block.start < end && start < block.end
+        }
     }
 
     private func runsToday(_ kind: IntermissionKind, on day: Date) -> Bool {
