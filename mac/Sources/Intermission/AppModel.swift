@@ -261,7 +261,7 @@ final class AppModel {
         plan = blocks(for: Date())
         events = calendars.events(on: Date(), calendarIDs: settings.calendarIDs)
 
-        let planner = Planner(intermissions: settings.intermissions)
+        let planner = Planner(intermissions: settings.intermissions, settleMinutes: settings.settleMinutes)
         unplacedToday = schedule.isDayOff(Date()) ? [] : planner.unplaced(in: plan, on: Date())
 
         let shown = shownDate
@@ -279,7 +279,10 @@ final class AppModel {
     private func blocks(for day: Date) -> [PlanBlock] {
         // A day off is a day off: no plan, nothing to nudge about.
         guard !schedule.isDayOff(day) else { return [] }
-        let planner = Planner(intermissions: settings.intermissions.filter { !skippedIntermissions.contains($0.id) })
+        let planner = Planner(
+            intermissions: settings.intermissions.filter { !skippedIntermissions.contains($0.id) },
+            settleMinutes: settings.settleMinutes
+        )
         return planner.plan(
             sessions: schedule.sessions,
             events: calendars.events(on: day, calendarIDs: settings.calendarIDs),
@@ -319,6 +322,26 @@ final class AppModel {
         plans[shownDate] = day
         plans.save()
         rebuildPlan()
+    }
+
+    /// Fill an empty stretch with something: the button on an open block.
+    func fill(_ gap: PlanBlock, with kind: IntermissionKind) {
+        let length = min(kind.length, gap.length)
+        let start = gap.start
+        if settings.intermissions.contains(where: { $0.id == kind.id }) {
+            apply(.moved(to: start), to: kind.id)
+            if length < kind.length { apply(.resized(minutes: Int(length / 60)), to: kind.id) }
+        } else {
+            addOneOff(name: kind.name, minutes: Int(length / 60), at: start)
+        }
+    }
+
+    /// What could go in a gap: everything that fits, longest first.
+    func candidates(for gap: PlanBlock) -> [IntermissionKind] {
+        settings.intermissions
+            .filter { $0.enabled && min($0.length, gap.length) >= min($0.shortestLength, gap.length) }
+            .filter { gap.length >= $0.shortestLength }
+            .sorted { $0.minutes > $1.minutes }
     }
 
     /// Nudging a block with the keyboard, for when a drag is the wrong tool.

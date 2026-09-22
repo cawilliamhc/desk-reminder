@@ -146,7 +146,7 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
         on: at(9)
     )
     let block = intermission(plan, "stretch")
-    #expect(block?.end == at(14))
+    #expect(block?.end == at(13, 50))       // ten minutes clear of the session
     #expect(block?.subline == "Before a seated session")
 }
 
@@ -265,20 +265,22 @@ private func packed(_ sessions: [PublishedSession], _ kinds: [IntermissionKind])
 }
 
 @Test func lunchIsShortenedRatherThanDroppedOnAFullDay() {
-    // Sessions leave a 35-minute hole, and the note window takes ten of it.
+    // 12:10 to 1:00, less the note window and ten minutes to settle: half an
+    // hour, where lunch wants fifty.
     let lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
-    let plan = packed([session(10, to: 12, 25), session(13, to: 16, 50)], [lunch])
+    let plan = packed([session(10, to: 12, 10), session(13, to: 16, 50)], [lunch])
     let block = intermission(plan, "lunch")
     #expect(block != nil)
     #expect(block!.isShortened)
-    #expect(block!.start == at(12, 35))                     // after the note window
-    #expect(Int(block!.length / 60) == 25)
+    #expect(block!.start == at(12, 20))                     // after the note window
+    #expect(Int(block!.length / 60) == 30)                  // and clear of the 1:00
+
     #expect(block!.subline?.contains("gaps are tight") == true)
 }
 
 @Test func lunchIsNotOfferedBelowItsMinimum() {
     let lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
-    let plan = packed([session(10, to: 12, 40), session(13, to: 16, 50)], [lunch])   // a 10-minute hole
+    let plan = packed([session(10, to: 12, 30), session(13, to: 16, 50)], [lunch])   // ten minutes, once the note and the settle are out
     #expect(intermission(plan, "lunch") == nil)
     #expect(planner([lunch]).unplaced(in: plan, on: at(9)).map(\.id) == ["lunch"])
 }
@@ -288,7 +290,7 @@ private func packed(_ sessions: [PublishedSession], _ kinds: [IntermissionKind])
     #expect(reading.minimumMinutes == nil)
     // A 15-minute hole: too short for a 30-minute read, and it has no floor
     // to fall back to, so it simply isn't offered.
-    let plan = packed([session(10, to: 12, 35), session(13, to: 16, 50)], [reading])
+    let plan = packed([session(10, to: 12, 25), session(13, to: 16, 50)], [reading])
     #expect(intermission(plan, "reading") == nil)
 }
 
@@ -296,4 +298,24 @@ private func packed(_ sessions: [PublishedSession], _ kinds: [IntermissionKind])
     let lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
     let plan = planner([lunch]).plan(sessions: fullDay(), on: at(9))
     #expect(intermission(plan, "lunch")?.isShortened == false)
+}
+
+
+@Test func anIntermissionEndsBeforeTheNextSessionStarts() {
+    let lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
+    let plan = Planner(calendar: calendar, intermissions: [lunch], settleMinutes: 10).plan(
+        sessions: [session(10, to: 10, 50), session(13, to: 13, 50), session(16, to: 16, 50)],
+        on: at(9)
+    )
+    let block = intermission(plan, "lunch")!
+    #expect(block.end <= at(12, 50))        // ten minutes clear of the 1:00
+}
+
+@Test func settleTimeCanBeTurnedOff() {
+    let stretch = IntermissionKind.defaults.first { $0.id == "stretch" }!
+    let plan = Planner(calendar: calendar, intermissions: [stretch], settleMinutes: 0).plan(
+        sessions: [session(10, to: 10, 50), session(14, to: 14, 50, virtual: true)],
+        on: at(9)
+    )
+    #expect(intermission(plan, "stretch")?.end == at(14))    // right up to the hour
 }

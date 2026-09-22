@@ -61,6 +61,13 @@ struct SettingsView: View {
                             .font(Theme.ui(11)).foregroundStyle(Theme.muted)
                         Spacer()
                     }
+                    row("Be back before a session", "Intermissions end this long before the next hour starts.") {
+                        Picker("", selection: $model.settings.settleMinutes) {
+                            ForEach([0, 5, 10, 15], id: \.self) { Text($0 == 0 ? "No gap" : "\($0) minutes").tag($0) }
+                        }
+                        .labelsHidden()
+                        .frame(width: 130)
+                    }
                     row("Count idle as off the computer after", "A locked screen counts immediately.") {
                         Picker("", selection: $model.settings.idleMinutes) {
                             ForEach([3, 6, 10], id: \.self) { Text("\($0) minutes").tag($0) }

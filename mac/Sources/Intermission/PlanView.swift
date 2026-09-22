@@ -35,7 +35,7 @@ struct PlanView: View {
                     .font(Theme.headline(24))
                     .foregroundStyle(Theme.ink)
                     .lineSpacing(3)
-                Text("Intermissions are placed in the gaps that fit them. Drag one to move it, drag its bottom edge to make it longer or shorter, or swap and skip.")
+                Text("Drag a break to move it, drag its bottom edge to make it longer or shorter, or fill an empty stretch.")
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.muted)
                 if model.scheduleMovedSincePlanning {
@@ -54,16 +54,9 @@ struct PlanView: View {
             .padding(.top, 22)
             .padding(.bottom, 8)
 
-            ScrollView {
-                VStack(spacing: 3) {
-                    ForEach(model.shownPlan) { block in
-                        PlanRow(block: block, model: model)
-                    }
-                    AddOneOffRow(model: model)
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 8)
-            }
+            PlanTimeline(model: model)
+            AddOneOffRow(model: model)
+                .padding(.bottom, 10)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -209,170 +202,5 @@ struct PlanView: View {
         let record = model.planDay == .today ? model.week.dropLast().last : model.week.last
         guard let record, record.atDesk > 0 else { return "No desk time logged." }
         return "Stood \(Int((record.standingShare * 100).rounded()))% of \(hoursMinutes(record.atDesk)) at the desk, \(record.notesStanding) of \(record.notesTotal) notes standing."
-    }
-}
-
-struct PlanRow: View {
-    let block: PlanBlock
-    @Bindable var model: AppModel
-    @State private var dragOffset: CGFloat = 0
-    @State private var dragMinutes = 0
-    @State private var resizeMinutes = 0
-
-    private var isOpen: Bool { block.kind == .open }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            Text(block.start.formatted(date: .omitted, time: .shortened))
-                .font(Theme.ui(11)).monospacedDigit().foregroundStyle(Theme.muted)
-                .frame(width: 58, alignment: .trailing)
-                .padding(.trailing, 10)
-                .padding(.top, 6)
-
-            RoundedRectangle(cornerRadius: 1)
-                .fill(model.color(for: block.kind))
-                .frame(width: 3)
-                .padding(.trailing, 10)
-
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(block.title).font(Theme.ui(13, weight: .medium)).foregroundStyle(Theme.ink)
-                        if let badge = block.badge {
-                            Text(badge)
-                                .font(Theme.ui(10, weight: .medium))
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Theme.surface)
-                                .overlay(Capsule().stroke(Theme.border, lineWidth: 1))
-                                .clipShape(Capsule())
-                                .foregroundStyle(Theme.muted)
-                        }
-                    }
-                    if let subline = block.subline {
-                        Text(subline).font(Theme.ui(11)).foregroundStyle(Theme.muted)
-                    }
-                }
-                Spacer()
-                Text("\(block.start.formatted(date: .omitted, time: .shortened)) – \(block.end.formatted(date: .omitted, time: .shortened))")
-                    .font(Theme.ui(11)).monospacedDigit().foregroundStyle(Theme.muted)
-                if case .intermission(let id) = block.kind {
-                    Menu("Swap") {
-                        ForEach(model.swapCandidates.filter { $0.id != id }, id: \.id) { kind in
-                            Button(kind.name) { model.apply(.swapped(for: kind.id), to: id) }
-                        }
-                    }
-                    .menuStyle(.borderlessButton)
-                    .font(Theme.ui(11))
-                    .frame(width: 58)
-
-                    Button("Skip") { model.apply(.skipped, to: id) }
-                        .buttonStyle(.borderless)
-                        .font(Theme.ui(11))
-
-                    if block.badge == "Yours" || block.isShortened {
-                        Button("Undo") { model.undoEdits(for: id) }
-                            .buttonStyle(.borderless)
-                            .font(Theme.ui(11))
-                            .foregroundStyle(Theme.muted)
-                    }
-                }
-            }
-            .padding(.vertical, 5)
-            .padding(.horizontal, 10)
-            .background(isOpen ? .clear : model.color(for: block.kind).opacity(0.18))
-            .clipShape(RoundedRectangle(cornerRadius: 7))
-            .overlay(alignment: .bottom) { if isDraggable { resizeHandle } }
-            .overlay(alignment: .topTrailing) { if dragMinutes != 0 || resizeMinutes != 0 { liveLabel } }
-            .offset(y: isDraggable ? dragOffset : 0)
-            .gesture(isDraggable ? moveGesture : nil)
-        }
-        .opacity(isOpen ? 0.7 : 1)
-        .frame(minHeight: max((block.length / 60 + Double(resizeMinutes)) * Self.pointsPerMinute, 32))
-        .animation(.interactiveSpring, value: dragOffset)
-    }
-
-    // MARK: - Dragging
-
-    /// The agenda's scale: a minute is this many points, so a drag can be
-    /// read back as a time rather than a guess.
-    static let pointsPerMinute: CGFloat = 0.8
-    /// Times land on five-minute marks; nobody plans a break at 12:37.
-    static let snapMinutes = 5
-
-    private var isDraggable: Bool {
-        if case .intermission = block.kind { return true }
-        return false
-    }
-
-    private var intermissionID: String? {
-        if case .intermission(let id) = block.kind { return id }
-        return nil
-    }
-
-    private var moveGesture: some Gesture {
-        DragGesture(minimumDistance: 3)
-            .onChanged { value in
-                dragOffset = value.translation.height
-                dragMinutes = snapped(value.translation.height)
-            }
-            .onEnded { value in
-                let minutes = snapped(value.translation.height)
-                dragOffset = 0
-                dragMinutes = 0
-                guard minutes != 0, let id = intermissionID else { return }
-                model.apply(.moved(to: block.start.addingTimeInterval(TimeInterval(minutes * 60))), to: id)
-            }
-    }
-
-    private var resizeHandle: some View {
-        Rectangle()
-            .fill(Color.clear)
-            .frame(height: 8)
-            .contentShape(Rectangle())
-            .onHover { NSCursor.resizeUpDown.set(); if !$0 { NSCursor.arrow.set() } }
-            .gesture(
-                DragGesture(minimumDistance: 2)
-                    .onChanged { resizeMinutes = snapped($0.translation.height) }
-                    .onEnded { value in
-                        let change = snapped(value.translation.height)
-                        resizeMinutes = 0
-                        guard change != 0, let id = intermissionID else { return }
-                        let minutes = max(5, Int(block.length / 60) + change)
-                        model.apply(.resized(minutes: minutes), to: id)
-                    }
-            )
-            .overlay(alignment: .bottom) {
-                Capsule()
-                    .fill(model.color(for: block.kind).opacity(0.5))
-                    .frame(width: 28, height: 3)
-                    .padding(.bottom, 1)
-            }
-    }
-
-    /// What the drag currently means, shown on the block while it happens.
-    private var liveLabel: some View {
-        Text(labelText)
-            .font(Theme.ui(10, weight: .medium))
-            .monospacedDigit()
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Theme.ink)
-            .foregroundStyle(Theme.surface)
-            .clipShape(Capsule())
-            .offset(x: -6, y: -8)
-    }
-
-    private var labelText: String {
-        if resizeMinutes != 0 {
-            let minutes = max(5, Int(block.length / 60) + resizeMinutes)
-            return "\(minutes) min"
-        }
-        let moved = block.start.addingTimeInterval(TimeInterval(dragMinutes * 60))
-        return moved.formatted(date: .omitted, time: .shortened)
-    }
-
-    private func snapped(_ translation: CGFloat) -> Int {
-        let minutes = Int((translation / Self.pointsPerMinute).rounded())
-        return (minutes / Self.snapMinutes) * Self.snapMinutes
     }
 }

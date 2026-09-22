@@ -26,6 +26,9 @@ public struct Settings: Codable, Equatable, Sendable {
     public var intermissions: [IntermissionKind] = IntermissionKind.defaults
     /// EventKit calendar identifiers Carl has chosen to read.
     public var calendarIDs: Set<String> = []
+    /// Minutes to be back before a session starts - coming straight from
+    /// lunch into someone's hour isn't arriving.
+    public var settleMinutes: Int = 10
     public var morningPlan: Bool = true
     /// Offer to plan tomorrow when the last session is done.
     public var eveningPlan: Bool = true

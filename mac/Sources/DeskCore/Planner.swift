@@ -79,10 +79,18 @@ public struct Planner: Sendable {
 
     public var calendar: Calendar
     public var intermissions: [IntermissionKind]
+    /// Minutes to be back before a session starts. An intermission that runs
+    /// up to the hour is one Carl arrives from, not one he comes back from.
+    public var settleMinutes: Int
 
-    public init(calendar: Calendar = .current, intermissions: [IntermissionKind] = IntermissionKind.defaults) {
+    public init(
+        calendar: Calendar = .current,
+        intermissions: [IntermissionKind] = IntermissionKind.defaults,
+        settleMinutes: Int = 10
+    ) {
         self.calendar = calendar
         self.intermissions = intermissions
+        self.settleMinutes = settleMinutes
     }
 
     /// The hours the plan covers.
@@ -390,9 +398,14 @@ public struct Planner: Sendable {
                 return nil
             }
             for start in seatedStarts.sorted() {
-                if let gap = fits.first(where: { $0.end >= start && $0.start <= start.addingTimeInterval(-kind.length) }) {
+                // The gap stops short of the session by the settle time, so
+                // "before a seated session" means before that edge.
+                let edge = start.addingTimeInterval(-TimeInterval(settleMinutes * 60))
+                if let gap = fits.first(where: {
+                    $0.end >= edge && $0.start <= edge.addingTimeInterval(-kind.length)
+                }) {
                     return Slot(
-                        start: min(start.addingTimeInterval(-kind.length), gap.end.addingTimeInterval(-kind.length)),
+                        start: min(edge, gap.end).addingTimeInterval(-kind.length),
                         subline: "Before a seated session"
                     )
                 }
@@ -418,17 +431,27 @@ public struct Planner: Sendable {
     private func gaps(around blocks: [PlanBlock], from dayStart: Date, to dayEnd: Date) -> [Gap] {
         let busy = blocks
             .filter { !isOpen($0) }
-            .map { (start: $0.start, end: $0.end) }
+            .map { (start: $0.start, end: $0.end, isSession: isSession($0)) }
             .sorted { $0.start < $1.start }
 
         var gaps: [Gap] = []
         var cursor = dayStart
         for block in busy {
-            if block.start > cursor { gaps.append(Gap(start: cursor, end: min(block.start, dayEnd))) }
+            // Stop short of a session, so whatever fills the gap leaves time
+            // to be back and settled before it starts.
+            let edge = block.isSession
+                ? block.start.addingTimeInterval(-TimeInterval(settleMinutes * 60))
+                : block.start
+            if edge > cursor { gaps.append(Gap(start: cursor, end: min(edge, dayEnd))) }
             cursor = max(cursor, block.end)
         }
         if cursor < dayEnd { gaps.append(Gap(start: cursor, end: dayEnd)) }
         return gaps.filter { $0.length > 0 }
+    }
+
+    private func isSession(_ block: PlanBlock) -> Bool {
+        if case .session = block.kind { return true }
+        return false
     }
 
     private func isOpen(_ block: PlanBlock) -> Bool {
