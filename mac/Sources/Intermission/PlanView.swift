@@ -104,6 +104,11 @@ struct PlanView: View {
         if notes > 0 {
             sentence += notes == 1 ? " One note standing." : " \(spell(notes)) notes standing."
         }
+        // A silent absence reads as a bug, so say what didn't fit.
+        if model.planDay == .today, !model.unplacedToday.isEmpty {
+            let names = list(model.unplacedToday.map { $0.name.lowercased() })
+            sentence += " No room for \(names) today."
+        }
         return sentence
     }
 

@@ -31,7 +31,7 @@ struct IntermissionRow: View {
             }
             Spacer(minLength: 8)
 
-            detail("Length", "\(kind.minutes) min")
+            detail("Length", kind.minimumMinutes.map { "\(kind.minutes) min · \($0) least" } ?? "\(kind.minutes) min")
             detail("How often", cadence)
             detail("Prefers", preference)
 

@@ -34,6 +34,8 @@ public struct PlanBlock: Equatable, Identifiable, Sendable {
     public var title: String
     public var subline: String?
     public var badge: String?
+    /// True when it had to be trimmed to fit the day.
+    public var isShortened: Bool = false
 
     public var length: TimeInterval { end.timeIntervalSince(start) }
     public var isSuggestion: Bool {
@@ -118,6 +120,15 @@ public struct Planner: Sendable {
             start: min(configured.start, fromSessions.start),
             end: max(configured.end, fromSessions.end)
         )
+    }
+
+    /// Today's intermissions that couldn't be fitted anywhere. The plan is
+    /// silent about them otherwise, and a silent absence reads as a bug.
+    public func unplaced(in blocks: [PlanBlock], on day: Date) -> [IntermissionKind] {
+        intermissions.filter { kind in
+            kind.enabled && runsToday(kind, on: day)
+                && !blocks.contains { $0.kind == .intermission(id: kind.id) }
+        }
     }
 
     public func plan(
@@ -224,13 +235,15 @@ public struct Planner: Sendable {
                 guard let kind = intermissions.first(where: { $0.id == replacement }),
                       claim(kind.id) else { continue }
                 guard let slot = place(kind, in: free(), blocks: blocks, day: day) else { continue }
+                let length = slot.length ?? kind.length
                 blocks.append(PlanBlock(
                     kind: .intermission(id: kind.id),
                     start: slot.start,
-                    end: slot.start.addingTimeInterval(kind.length),
+                    end: slot.start.addingTimeInterval(length),
                     title: kind.name,
                     subline: "Swapped in by you",
-                    badge: "Yours"
+                    badge: "Yours",
+                    isShortened: length < kind.length
                 ))
             case .skipped:
                 continue
@@ -244,13 +257,15 @@ public struct Planner: Sendable {
             && !skipped.contains(kind.id) && !swappedAway.contains(kind.id)
             && !edited.contains(kind.id) && !placed.contains(kind.id) {
             guard let slot = place(kind, in: free(), blocks: blocks, day: day), claim(kind.id) else { continue }
+            let length = slot.length ?? kind.length
             blocks.append(PlanBlock(
                 kind: .intermission(id: kind.id),
                 start: slot.start,
-                end: slot.start.addingTimeInterval(kind.length),
+                end: slot.start.addingTimeInterval(length),
                 title: kind.name,
                 subline: slot.subline,
-                badge: "Suggested"
+                badge: "Suggested",
+                isShortened: length < kind.length
             ))
         }
 
@@ -273,6 +288,8 @@ public struct Planner: Sendable {
     private struct Slot {
         var start: Date
         var subline: String?
+        /// How long it actually gets; shorter than asked for on a tight day.
+        var length: TimeInterval?
     }
 
     /// A block Carl placed himself. It keeps its time even when the day has
@@ -305,8 +322,20 @@ public struct Planner: Sendable {
     }
 
     private func place(_ kind: IntermissionKind, in gaps: [Gap], blocks: [PlanBlock], day: Date) -> Slot? {
-        let fits = gaps.filter { $0.length >= kind.length }
-        guard !fits.isEmpty else { return nil }
+        let full = gaps.filter { $0.length >= kind.length }
+        // Nothing big enough: take the best of what's left, if it's still
+        // long enough to be worth doing.
+        guard !full.isEmpty else {
+            guard kind.shortestLength < kind.length,
+                  let best = gaps.filter({ $0.length >= kind.shortestLength }).max(by: { $0.length < $1.length })
+            else { return nil }
+            return Slot(
+                start: best.start,
+                subline: "\(Int(best.length / 60)) min — the gaps are tight today",
+                length: best.length
+            )
+        }
+        let fits = full
 
         switch kind.preference {
         case .around(let minutes):

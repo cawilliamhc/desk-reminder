@@ -58,6 +58,10 @@ final class AppModel {
     /// Updated every tick so countdowns move without each view keeping a timer.
     private(set) var now = Date()
     private(set) var skippedIntermissions: Set<String> = []
+    /// Intermissions already announced today, so each is said once.
+    private var announcedIntermissions: Set<String> = []
+    /// Today's intermissions that wouldn't fit anywhere.
+    private(set) var unplacedToday: [IntermissionKind] = []
     let calendars = Calendars()
     var settings: DeskCore.Settings { didSet { settingsChanged(oldValue) } }
 
@@ -180,6 +184,7 @@ final class AppModel {
             if coach.isStanding != true { say(.stillSitting) }
         }
 
+        announceIntermissionIfDue(now)
         offerTomorrowIfDayIsDone(now)
         summariseDayIfDone(now)
 
@@ -198,6 +203,7 @@ final class AppModel {
         today = days[now]
         startedIntermissions = []
         skippedIntermissions = []
+        announcedIntermissions = []
         planDay = .today
         computer.prune(before: startOfDay.addingTimeInterval(-7 * 86_400))
         heights.prune(before: startOfDay.addingTimeInterval(-7 * 86_400))
@@ -254,6 +260,9 @@ final class AppModel {
         schedule.reload()
         plan = blocks(for: Date())
         events = calendars.events(on: Date(), calendarIDs: settings.calendarIDs)
+
+        let planner = Planner(intermissions: settings.intermissions)
+        unplacedToday = schedule.isDayOff(Date()) ? [] : planner.unplaced(in: plan, on: Date())
 
         let shown = shownDate
         shownPlan = planDay == .today ? plan : blocks(for: shown)
@@ -359,6 +368,28 @@ final class AppModel {
     var swapCandidates: [IntermissionKind] { settings.intermissions }
 
     // MARK: - The evening offer to plan tomorrow
+
+    /// A planned intermission's time has come round. Said once, and never
+    /// during a session or while paused.
+    private func announceIntermissionIfDue(_ now: Date) {
+        guard !settings.paused(at: now), !schedule.isDayOff(now),
+              schedule.session(covering: now) == nil
+        else { return }
+        for block in plan {
+            guard case .intermission(let id) = block.kind,
+                  block.start <= now, now < block.end,
+                  !announcedIntermissions.contains(id),
+                  !startedIntermissions.contains(id),
+                  let kind = settings.intermissions.first(where: { $0.id == id })
+            else { continue }
+            announcedIntermissions.insert(id)
+            say(.intermissionDue(
+                name: kind.name,
+                minutes: Int(block.length / 60),
+                shortened: block.isShortened
+            ))
+        }
+    }
 
     /// The day in a sentence, once the last session is behind him.
     private func summariseDayIfDone(_ now: Date) {

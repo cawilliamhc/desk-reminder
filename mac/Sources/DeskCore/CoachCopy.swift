@@ -10,6 +10,8 @@ public enum CoachMessage: Equatable, Sendable {
     case endOfDay(percent: Int, notesStanding: Int, notesTotal: Int)
     /// After the last session: tomorrow, in a sentence, with an offer to shape it.
     case planTomorrow(sessions: Int, virtual: Int)
+    /// A planned intermission's time has come.
+    case intermissionDue(name: String, minutes: Int, shortened: Bool)
 }
 
 public struct CoachCopy: Sendable {
@@ -61,6 +63,26 @@ public struct CoachCopy: Sendable {
             case .dry: "\(days) days over goal. \(tail)"
             case .warm: "\(days) days over the line in a row. \(tail)"
             case .playful: "\(days) days over the line. \(tail) Tomorrow decides it."
+            }
+        case .intermissionDue(let name, let minutes, let shortened):
+            let lower = name.lowercased()
+            if shortened {
+                return switch tone {
+                case .dry: "\(name): \(minutes) min, shorter than usual. The day is full."
+                case .warm: "Only \(minutes) minutes for \(lower) today — take them."
+                case .playful: pick([
+                    "\(minutes) minutes of \(lower) is what today can spare. Better than none.",
+                    "A short \(lower): \(minutes) minutes. The day drove a hard bargain.",
+                ])
+                }
+            }
+            return switch tone {
+            case .dry: "\(name): \(minutes) min, starting now."
+            case .warm: "\(name) now — \(minutes) minutes to yourself."
+            case .playful: pick([
+                "\(name), \(minutes) minutes, starting now. The desk will hold.",
+                "That's \(lower) o'clock. \(minutes) minutes, and the screen can wait.",
+            ])
             }
         case .planTomorrow(let sessions, let virtual):
             let count = switch sessions {

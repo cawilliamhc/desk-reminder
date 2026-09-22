@@ -252,3 +252,48 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
     let plan = planner([lunch]).plan(sessions: fullDay(), on: at(9), workingWindows: [])
     #expect(intermission(plan, "lunch")?.start == at(12, 30))
 }
+
+
+/// A day bounded by its sessions, so the only room is between them — the
+/// edges of a normal day are wide enough for anything.
+private func packed(_ sessions: [PublishedSession], _ kinds: [IntermissionKind]) -> [PlanBlock] {
+    planner(kinds).plan(
+        sessions: sessions,
+        on: at(9),
+        workday: DateInterval(start: sessions.first!.start, end: sessions.last!.end)
+    )
+}
+
+@Test func lunchIsShortenedRatherThanDroppedOnAFullDay() {
+    // Sessions leave a 35-minute hole, and the note window takes ten of it.
+    let lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
+    let plan = packed([session(10, to: 12, 25), session(13, to: 16, 50)], [lunch])
+    let block = intermission(plan, "lunch")
+    #expect(block != nil)
+    #expect(block!.isShortened)
+    #expect(block!.start == at(12, 35))                     // after the note window
+    #expect(block!.length == 25 * 60)
+    #expect(block!.subline?.contains("gaps are tight") == true)
+}
+
+@Test func lunchIsNotOfferedBelowItsMinimum() {
+    let lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
+    let plan = packed([session(10, to: 12, 40), session(13, to: 16, 50)], [lunch])   // a 10-minute hole
+    #expect(intermission(plan, "lunch") == nil)
+    #expect(planner([lunch]).unplaced(in: plan, on: at(9)).map(\.id) == ["lunch"])
+}
+
+@Test func somethingWithNoMinimumIsNeverShortened() {
+    let reading = IntermissionKind.defaults.first { $0.id == "reading" }!
+    #expect(reading.minimumMinutes == nil)
+    // A 15-minute hole: too short for a 30-minute read, and it has no floor
+    // to fall back to, so it simply isn't offered.
+    let plan = packed([session(10, to: 12, 35), session(13, to: 16, 50)], [reading])
+    #expect(intermission(plan, "reading") == nil)
+}
+
+@Test func aFullLengthPlacementIsNotMarkedShortened() {
+    let lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
+    let plan = planner([lunch]).plan(sessions: fullDay(), on: at(9))
+    #expect(intermission(plan, "lunch")?.isShortened == false)
+}
