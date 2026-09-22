@@ -3,7 +3,12 @@ import SwiftUI
 
 @main
 struct IntermissionApp: App {
-    @State private var model = AppModel()
+    @State private var model: AppModel
+
+    init() {
+        PlanDump.runIfAsked()
+        model = AppModel()
+    }
 
     var body: some Scene {
         Window("Intermission", id: "main") {

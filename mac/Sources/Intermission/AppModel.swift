@@ -10,18 +10,24 @@ import Observation
 /// connected, and nothing here opens the port for writing - the box reports
 /// height by itself while the desk moves. Sending anything makes the handset
 /// click and light up, which is exactly what this app must not do.
+/// Where everything lives. Outside the model so tools like --dump-plan can
+/// read it without touching the main actor.
+enum Paths {
+    static let support = FileManager.default
+        .homeDirectoryForCurrentUser
+        .appending(path: "Library/Application Support/com.carlwilliamson.intermission")
+    static let sessions = FileManager.default
+        .homeDirectoryForCurrentUser
+        .appending(path: "Library/Application Support/com.carlwilliamson.practicestudio/desk-reminder/sessions.json")
+}
+
 @MainActor
 @Observable
 final class AppModel {
     enum View: String, CaseIterable { case plan, today, settings }
 
-    // Where everything lives.
-    static let supportDirectory = FileManager.default
-        .homeDirectoryForCurrentUser
-        .appending(path: "Library/Application Support/com.carlwilliamson.intermission")
-    static let sessionsFile = FileManager.default
-        .homeDirectoryForCurrentUser
-        .appending(path: "Library/Application Support/com.carlwilliamson.practicestudio/desk-reminder/sessions.json")
+    static var supportDirectory: URL { Paths.support }
+    static var sessionsFile: URL { Paths.sessions }
 
     var selectedView: View = .today
     private(set) var adapterStatus: SerialMonitor.Status = .adapterNotFound
