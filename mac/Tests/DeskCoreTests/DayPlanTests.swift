@@ -244,3 +244,29 @@ private func minutes(_ block: PlanBlock?) -> Int? {
     #expect(day.edits.first?.change == .resized(minutes: 40))
 }
 
+
+
+@Test func skippingSomethingThatWasSwappedInTakesItOffThePlan() {
+    // Carl's bug: stretch had been swapped for reading, so skipping reading
+    // did nothing — the swap kept putting it back.
+    let plan = planner().plan(
+        sessions: fullDay(),
+        on: at(9),
+        edits: [
+            PlanEdit(intermissionID: "stretch", change: .swapped(for: "reading")),
+            PlanEdit(intermissionID: "reading", change: .skipped),
+        ]
+    )
+    #expect(block(plan, "reading") == nil)
+    #expect(block(plan, "stretch") == nil)      // swapped away, and its replacement declined
+}
+
+@Test func swappingStillWorksWhenNothingIsSkipped() {
+    let plan = planner().plan(
+        sessions: fullDay(),
+        on: at(9),
+        edits: [PlanEdit(intermissionID: "stretch", change: .swapped(for: "reading"))]
+    )
+    #expect(block(plan, "reading") != nil)
+    #expect(block(plan, "stretch") == nil)
+}

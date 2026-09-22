@@ -251,7 +251,11 @@ public struct Planner: Sendable {
                     badge: "Yours"
                 ))
             case .swapped(let replacement):
-                guard let kind = intermissions.first(where: { $0.id == replacement }),
+                // Skipping the thing that was swapped IN takes it off the
+                // plan too: the swap said "not stretch, reading instead", and
+                // skipping reading means neither.
+                guard !skipped.contains(replacement),
+                      let kind = intermissions.first(where: { $0.id == replacement }),
                       claim(kind.id) else { continue }
                 guard let slot = place(kind, in: free(), blocks: blocks, day: day) else { continue }
                 let length = resized[kind.id].map { TimeInterval(max(5, $0) * 60) } ?? slot.length ?? kind.length
