@@ -16,6 +16,9 @@ swift build -c "$CONFIG"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/Intermission" "$APP/Contents/MacOS/Intermission"
+# GT Ultra rides inside the bundle (ATSApplicationFontsPath) rather than
+# being installed system-wide: the licence covers this app, not the Mac.
+cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -38,6 +41,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<!-- GT Ultra, bundled rather than installed. -->
+	<key>ATSApplicationFontsPath</key>
+	<string>Fonts</string>
 	<!-- Menu-bar app: no Dock icon. The window opens from the menu. -->
 	<key>LSUIElement</key>
 	<true/>

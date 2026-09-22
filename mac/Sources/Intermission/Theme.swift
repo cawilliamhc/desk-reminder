@@ -16,16 +16,16 @@ enum Theme {
     static let lunch = Color(hex: 0x967396)            // chart-5
     static let sitting = border
 
-    /// The mocks set headlines in GT Ultra Standard Light, which Carl has
-    /// licensed. It falls back to New York, the system serif, when the font
-    /// isn't installed - same feel, no licence question.
+    /// Headlines are GT Ultra Light, which Carl has licensed and which ships
+    /// inside the bundle. New York (the system serif) stands in if the font
+    /// ever fails to load, so the app never falls back to a sans-serif.
+    static let headlineFontName = "GTUltra-Light"
+    private static let hasGTUltra = NSFont(name: headlineFontName, size: 12) != nil
+
     static func headline(_ size: CGFloat) -> Font {
-        let gt = "GT Ultra Standard Light"
-        if NSFontManager.shared.availableFontFamilies.contains("GT Ultra Standard")
-            || NSFont(name: gt, size: size) != nil {
-            return .custom(gt, size: size)
-        }
-        return .system(size: size, design: .serif).weight(.light)
+        hasGTUltra
+            ? .custom(headlineFontName, size: size)
+            : .system(size: size, design: .serif).weight(.light)
     }
 
     static func ui(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
