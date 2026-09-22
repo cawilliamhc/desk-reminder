@@ -70,7 +70,7 @@ struct NowCard: View {
     private var label: String {
         switch model.phase {
         case .session(_, let virtual): virtual ? "In session · virtual" : "In session"
-        case .note(_, let seated): seated ? "Note" : "Note — standing"
+        case .note: "Note — standing"
         case .upcoming(let kind, _): "Up next · \(kind.name)"
         case .running(let kind, _): kind.name
         case .open: "Open"
@@ -79,7 +79,7 @@ struct NowCard: View {
 
     private var until: String {
         switch model.phase {
-        case .session(let until, _), .note(let until, _), .running(_, let until):
+        case .session(let until, _), .note(let until), .running(_, let until):
             "until \(until.formatted(date: .omitted, time: .shortened))"
         case .upcoming(_, let at):
             "at \(at.formatted(date: .omitted, time: .shortened))"
@@ -92,8 +92,8 @@ struct NowCard: View {
         switch model.phase {
         case .session(_, let virtual):
             virtual ? "Quiet until the note window. No nudges." : "Nothing until this one's done."
-        case .note(_, let seated):
-            seated ? "Write the note — you're already sitting for this one." : "Write the note on your feet."
+        case .note:
+            "Write the note on your feet."
         case .upcoming(let kind, _):
             "\(kind.name), \(kind.minutes) minutes. Off the computer."
         case .running(let kind, _):

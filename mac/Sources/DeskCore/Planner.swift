@@ -4,9 +4,10 @@ import Foundation
 public struct PlanBlock: Equatable, Identifiable, Sendable {
     public enum Kind: Equatable, Sendable {
         case session(virtual: Bool)
-        /// The window after a session. Seated after a virtual one, where the
-        /// note still happens but standing isn't the point.
-        case note(seated: Bool)
+        /// The standing window after a session - after every session, virtual
+        /// included. Carl writes his notes on his feet; a seated one was the
+        /// comps' idea, not his.
+        case note
         case calendarEvent
         case intermission(id: String)
         case open
@@ -20,7 +21,7 @@ public struct PlanBlock: Equatable, Identifiable, Sendable {
     private var kindKey: String {
         switch kind {
         case .session(let virtual): virtual ? "session-virtual" : "session"
-        case .note(let seated): seated ? "note-seated" : "note"
+        case .note: "note"
         case .calendarEvent: "calendar"
         case .intermission(let id): "intermission-\(id)"
         case .open: "open"
@@ -158,11 +159,8 @@ public struct Planner: Sendable {
             let noteEnd = min(wanted, nextFixed)
             if noteEnd.timeIntervalSince(session.end) >= TimeInterval(Self.minimumNoteMinutes * 60) {
                 blocks.append(PlanBlock(
-                    kind: .note(seated: session.mode.isSeated), start: session.end, end: noteEnd,
-                    // Seated after a virtual session; the nudge to stand is
-                    // what "skip virtual" silences, not the note itself.
-                    title: session.mode.isSeated ? "Note" : "Note — standing",
-                    subline: nil
+                    kind: .note, start: session.end, end: noteEnd,
+                    title: "Note — standing", subline: nil
                 ))
             }
         }

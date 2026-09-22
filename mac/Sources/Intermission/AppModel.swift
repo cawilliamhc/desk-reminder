@@ -167,13 +167,11 @@ final class AppModel {
 
         schedule.reload()
         let inSession = schedule.session(covering: now) != nil || schedule.isDayOff(now)
-        for session in schedule.endings(after: lastCheck, until: now) {
-            // A virtual session is seated; "skip virtual" only silences the
-            // nudge, the note window still counts.
-            let silent = settings.skipVirtual && session.mode.isSeated
+        for _ in schedule.endings(after: lastCheck, until: now) {
+            // Every session ends in a standing note, virtual included.
             let (message, outcome) = coach.sessionEnded(at: now, inSession: inSession)
             days.update(now) { $0.notesTotal += 1 }
-            if let outcome { record(outcome) } else if let message, !silent { say(message) }
+            if let outcome { record(outcome) } else if let message { say(message) }
         }
         lastCheck = now
 

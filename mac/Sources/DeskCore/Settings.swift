@@ -15,7 +15,6 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Share of at-desk time (sessions excluded) to aim for.
     public var standingGoal: Double = 0.20
     public var remindForNotes: Bool = true
-    public var skipVirtual: Bool = true
     public var sound: Bool = true
     public var tone: Tone = .playful
     public var deskDays: Set<Weekday> = [.monday, .tuesday, .wednesday, .friday]

@@ -43,9 +43,6 @@ struct SettingsView: View {
                     row("Remind me to raise the desk", "At session end, then once more after 5 minutes if still down.") {
                         Toggle("", isOn: $model.settings.remindForNotes).labelsHidden().toggleStyle(.switch)
                     }
-                    row("Skip virtual sessions", "No nudge after a seated session; note windows still count.") {
-                        Toggle("", isOn: $model.settings.skipVirtual).labelsHidden().toggleStyle(.switch)
-                    }
                     row("Sound", "Play a sound with reminders.") {
                         Toggle("", isOn: $model.settings.sound).labelsHidden().toggleStyle(.switch)
                     }

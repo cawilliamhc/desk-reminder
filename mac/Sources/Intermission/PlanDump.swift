@@ -43,7 +43,7 @@ enum PlanDump {
         for block in plan {
             let kind = switch block.kind {
             case .session(let virtual): virtual ? "session(virtual)" : "session"
-            case .note(let seated): seated ? "note (seated)" : "note"
+            case .note: "note"
             case .calendarEvent: "calendar"
             case .intermission(let id): "intermission(\(id))"
             case .open: "open"
