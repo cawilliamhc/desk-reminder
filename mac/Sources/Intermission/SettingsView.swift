@@ -60,6 +60,24 @@ struct SettingsView: View {
                     }
                 }
 
+                section("App", "Where Intermission lives on this Mac.") {
+                    row("Open at login", "Start quietly in the menu bar when you log in.") {
+                        Toggle("", isOn: Binding(
+                            get: { model.opensAtLogin },
+                            set: { model.setOpensAtLogin($0) }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                    }
+                    row("Notifications", "A Focus queues them silently unless Intermission is in its allowed apps.") {
+                        Button("Open Focus settings") {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.Focus-Settings.extension") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                    }
+                }
+
                 section("Coach", "How the messages sound.") {
                     row("Tone", "Playful rotates its lines so they don't go stale.") {
                         Picker("", selection: $model.settings.tone) {

@@ -53,5 +53,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 echo "</plist>" >> "$APP/Contents/Info.plist"
 
+# No --entitlements: the time-sensitive entitlement needs a provisioning
+# profile from a paid developer account, and an ad-hoc signature carrying it
+# is refused at launch (RBSRequestErrorDomain 5). Focus break-through is done
+# by allowing Intermission in the Focus's own app list instead.
 codesign --force --sign - --identifier com.carlwilliamson.intermission "$APP"
 echo "built $APP"

@@ -63,6 +63,9 @@ final class AppModel {
         presence.idleThreshold = 6 * 60
 
         notifier.requestAuthorization()
+        if ProcessInfo.processInfo.environment["INTERMISSION_TEST_NOTIFY"] != nil {
+            notifier.post("Test notification from Intermission.", sound: true)
+        }
         notifier.onAction = { [weak self] action in self?.handle(action) }
         schedule.reload()
         start()
@@ -196,6 +199,12 @@ final class AppModel {
     func useCurrentHeightAsStanding() {
         guard let height, height >= 35 else { return }
         settings.standingThreshold = (height - 1).rounded(.toNearestOrEven)
+    }
+
+    private(set) var opensAtLogin = LoginItem.isEnabled
+
+    func setOpensAtLogin(_ enabled: Bool) {
+        opensAtLogin = LoginItem.set(enabled)
     }
 
     /// Last 7 days, oldest first, for the week chart.
