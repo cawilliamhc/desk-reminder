@@ -18,22 +18,22 @@ struct PlanTimeline: View {
             ZStack(alignment: .topLeading) {
                 hourLines
                 ForEach(model.shownPlan) { block in
-                    if block.kind == .open {
-                        OpenSpace(block: block, model: model)
-                            .frame(height: height(of: block))
-                            .offset(x: gutter, y: y(block.start))
-                            .padding(.trailing, 8)
-                    } else {
-                        TimelineBlock(block: block, model: model)
-                            .frame(height: height(of: block))
-                            .offset(x: gutter, y: y(block.start))
-                            .padding(.trailing, 8)
+                    Group {
+                        if block.kind == .open {
+                            OpenSpace(block: block, model: model)
+                        } else {
+                            TimelineBlock(block: block, model: model)
+                        }
                     }
+                    .frame(height: height(of: block))
+                    .padding(.leading, gutter)
+                    .offset(y: y(block.start))
                 }
                 if model.planDay == .today, let y = nowY {
                     nowLine.offset(y: y)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
             .frame(height: totalHeight, alignment: .top)
             .padding(.horizontal, 24)
             .padding(.vertical, 10)
@@ -172,19 +172,19 @@ struct TimelineBlock: View {
                 if let subline = block.subline, block.length >= 25 * 60 {
                     Text(subline).font(Theme.ui(10)).foregroundStyle(Theme.muted).lineLimit(1)
                 }
-                if isDraggable, block.length >= 30 * 60 {
+                if isDraggable, block.length >= 30 * 60, let id = intermissionID {
                     HStack(spacing: 8) {
                         Menu("Swap") {
-                            ForEach(model.swapCandidates.filter { $0.id != intermissionID }, id: \.id) { kind in
-                                Button(kind.name) { model.apply(.swapped(for: kind.id), to: intermissionID!) }
+                            ForEach(model.swapCandidates.filter { $0.id != id }, id: \.id) { kind in
+                                Button(kind.name) { model.apply(.swapped(for: kind.id), to: id) }
                             }
                         }
                         .menuStyle(.borderlessButton)
                         .frame(width: 52)
-                        Button("Skip") { model.apply(.skipped, to: intermissionID!) }
+                        Button(model.isOneOff(id) ? "Remove" : "Skip") { model.removeFromPlan(id) }
                             .buttonStyle(.borderless)
-                        if block.badge == "Yours" {
-                            Button("Undo") { model.undoEdits(for: intermissionID!) }
+                        if block.badge == "Yours", !model.isOneOff(id) {
+                            Button("Undo") { model.undoEdits(for: id) }
                                 .buttonStyle(.borderless)
                                 .foregroundStyle(Theme.muted)
                         }
@@ -205,6 +205,20 @@ struct TimelineBlock: View {
         .offset(y: isDraggable ? dragOffset : 0)
         .gesture(isDraggable ? moveGesture : nil)
         .animation(.interactiveSpring, value: dragOffset)
+        // Short blocks have no room for buttons, so every block's actions are
+        // here too - a ten-minute stretch was impossible to remove otherwise.
+        .contextMenu {
+            if let id = intermissionID {
+                Button(model.isOneOff(id) ? "Remove" : "Skip today") { model.removeFromPlan(id) }
+                Menu("Swap for") {
+                    ForEach(model.swapCandidates.filter { $0.id != id }, id: \.id) { kind in
+                        Button(kind.name) { model.apply(.swapped(for: kind.id), to: id) }
+                    }
+                }
+                Divider()
+                Button("Back to the suggestion") { model.undoEdits(for: id) }
+            }
+        }
     }
 
     private var times: String {

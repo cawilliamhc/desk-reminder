@@ -50,7 +50,7 @@ struct SettingsView: View {
 
                 section("Intermissions", "Things to do off the computer. Each one is planned into a gap that fits it.") {
                     ForEach($model.settings.intermissions) { $kind in
-                        IntermissionRow(kind: $kind)
+                        IntermissionRow(kind: $kind, onDelete: { model.deleteIntermission(kind.id) })
                     }
                     HStack {
                         Button("Add an intermission") { isAddingIntermission = true }

@@ -5,7 +5,10 @@ import SwiftUI
 /// in the day it wants to sit.
 struct IntermissionRow: View {
     @Binding var kind: IntermissionKind
+    /// Only Carl's own are removable; the four defaults can be switched off.
+    var onDelete: (() -> Void)?
     @State private var isPickingColor = false
+    @State private var isHovering = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -36,7 +39,20 @@ struct IntermissionRow: View {
             detail("Prefers", preference)
 
             Toggle("", isOn: $kind.enabled).labelsHidden().toggleStyle(.switch)
+
+            if kind.id.hasPrefix("custom-") {
+                Button {
+                    onDelete?()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundStyle(isHovering ? Theme.calendar : Theme.muted)
+                }
+                .buttonStyle(.plain)
+                .help("Remove \(kind.name)")
+            }
         }
+        .onHover { isHovering = $0 }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.background)

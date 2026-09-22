@@ -350,6 +350,25 @@ final class AppModel {
         apply(.moved(to: block.start.addingTimeInterval(TimeInterval(minutes * 60))), to: intermissionID)
     }
 
+    /// A one-off belongs to its day, so removing it means forgetting the
+    /// edit. A regular intermission is skipped for the day instead.
+    func isOneOff(_ intermissionID: String) -> Bool {
+        !settings.intermissions.contains { $0.id == intermissionID }
+    }
+
+    func removeFromPlan(_ intermissionID: String) {
+        if isOneOff(intermissionID) {
+            undoEdits(for: intermissionID)
+        } else {
+            apply(.skipped, to: intermissionID)
+        }
+    }
+
+    /// Drops a recurring intermission from the list for good.
+    func deleteIntermission(_ intermissionID: String) {
+        settings.intermissions.removeAll { $0.id == intermissionID }
+    }
+
     func undoEdits(for intermissionID: String) {
         var day = plans[shownDate]
         day.clearEdits(for: intermissionID)
