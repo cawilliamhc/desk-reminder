@@ -12,6 +12,7 @@ struct IntermissionApp: App {
                 Divider()
                 Group {
                     switch model.selectedView {
+                    case .plan: PlanView(model: model)
                     case .today: TodayView(model: model)
                     case .settings: SettingsView(model: model)
                     }

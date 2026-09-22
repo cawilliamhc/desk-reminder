@@ -20,6 +20,14 @@ public struct Settings: Codable, Equatable, Sendable {
     public var tone: Tone = .playful
     public var deskDays: Set<Weekday> = [.monday, .tuesday, .wednesday, .friday]
     public var pausedUntil: Date?
+    /// Idle for longer than this counts as off the computer; a lock counts at once.
+    public var idleMinutes: Int = 6
+    /// Ask what an unlabelled break was, when it was long enough to matter.
+    public var askWhatABreakWas: Bool = true
+    public var intermissions: [IntermissionKind] = IntermissionKind.defaults
+    /// EventKit calendar identifiers Carl has chosen to read.
+    public var calendarIDs: Set<String> = []
+    public var morningPlan: Bool = true
 
     public init() {}
 

@@ -50,6 +50,44 @@ struct SettingsView: View {
                     }
                 }
 
+                section("Intermissions", "Things to do off the computer. Each one is planned into a gap that fits it.") {
+                    ForEach($model.settings.intermissions) { $kind in
+                        IntermissionRow(kind: $kind)
+                    }
+                    row("Count idle as off the computer after", "A locked screen counts immediately.") {
+                        Picker("", selection: $model.settings.idleMinutes) {
+                            ForEach([3, 6, 10], id: \.self) { Text("\($0) minutes").tag($0) }
+                        }
+                        .labelsHidden()
+                        .frame(width: 130)
+                    }
+                    row("Ask what a break was", "On return from an unnamed break of 20 minutes or more.") {
+                        Toggle("", isOn: $model.settings.askWhatABreakWas).labelsHidden().toggleStyle(.switch)
+                    }
+                }
+
+                section("Calendars", "Read-only. Events block the gaps intermissions would use.") {
+                    row("Practice Studio", sessionsDetail) { EmptyView() }
+                    if model.calendars.authorized {
+                        ForEach(model.calendars.available, id: \.id) { calendar in
+                            row(calendar.title, "") {
+                                Toggle("", isOn: Binding(
+                                    get: { model.settings.calendarIDs.contains(calendar.id) },
+                                    set: { on in
+                                        if on { model.settings.calendarIDs.insert(calendar.id) }
+                                        else { model.settings.calendarIDs.remove(calendar.id) }
+                                    }
+                                ))
+                                .labelsHidden().toggleStyle(.switch)
+                            }
+                        }
+                    } else {
+                        row("Personal calendars", "Intermission hasn't been given access yet.") {
+                            Button("Allow access") { Task { await model.calendars.requestAccess(); model.rebuildPlan() } }
+                        }
+                    }
+                }
+
                 section("Days", "Rest days never nudge, and never count against a streak.") {
                     row("Desk days", "Days this app pays attention to.") {
                         HStack(spacing: 4) {
@@ -118,6 +156,11 @@ struct SettingsView: View {
             detail += " · last report \(Int(Date().timeIntervalSince(last)))s ago"
         }
         return detail
+    }
+
+    private var sessionsDetail: String {
+        let count = model.plan.filter { if case .session = $0.kind { return true } else { return false } }.count
+        return "sessions.json · \(count) today · times and modality only"
     }
 
     private var pauseDetail: String {

@@ -9,6 +9,7 @@ struct TodayView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
+                DayLanes(model: model)
                 statCards
                 weekChart
             }
@@ -60,20 +61,38 @@ struct TodayView: View {
                 hint: "so far today"
             )
             StatCard(
-                label: "STANDING",
-                value: hoursMinutes(model.today.standing),
-                hint: "of \(hoursMinutes(model.today.atDesk)) at the desk"
+                label: "OFF THE COMPUTER",
+                value: hoursMinutes(model.offComputerToday),
+                hint: breakdown
             )
             StatCard(
-                label: "STREAK",
-                value: "\(model.streak)",
-                hint: model.streak == 1 ? "day over goal" : "days over goal"
+                label: "INTERMISSIONS",
+                value: "\(model.intermissionsDone) of \(model.intermissionsPlanned)",
+                hint: upNextHint
             )
             StatCard(
-                label: "DESK",
-                value: model.height.map { String(format: "%.1f″", $0) } ?? "—",
-                hint: model.heightIsAssumed ? "last known" : model.adapterStatus.label
+                label: "IN SESSION",
+                value: hoursMinutes(model.inSessionToday),
+                hint: "seated, kept separate"
             )
+        }
+    }
+
+    private var breakdown: String {
+        let named = model.breaksToday
+            .sorted { $0.value > $1.value }
+            .map { "\($0.key.lowercased()) \(Int($0.value / 60))" }
+        return named.isEmpty ? "nothing named yet" : named.joined(separator: " · ")
+    }
+
+    private var upNextHint: String {
+        switch model.phase {
+        case .upcoming(let kind, let at):
+            "\(kind.name.lowercased()) at \(at.formatted(date: .omitted, time: .shortened))"
+        case .running(let kind, _):
+            "\(kind.name.lowercased()) running now"
+        default:
+            model.intermissionsPlanned == 0 ? "none planned" : "nothing right now"
         }
     }
 

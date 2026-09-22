@@ -13,7 +13,7 @@ import Observation
 @MainActor
 @Observable
 final class AppModel {
-    enum View: String, CaseIterable { case today, settings }
+    enum View: String, CaseIterable { case plan, today, settings }
 
     // Where everything lives.
     static let supportDirectory = FileManager.default
@@ -29,6 +29,17 @@ final class AppModel {
     private(set) var timeline: DeskTimeline
     private(set) var today: DayRecord
     private(set) var isPresent = false
+    private(set) var computer = ComputerLog()
+    private(set) var plan: [PlanBlock] = []
+    private(set) var phase: Phase = .open
+    private(set) var events: [CalendarEvent] = []
+    /// The break Carl came back from that nobody has named yet.
+    private(set) var breakToLabel: ComputerSegment?
+    private(set) var startedIntermissions: Set<String> = []
+    /// Updated every tick so countdowns move without each view keeping a timer.
+    private(set) var now = Date()
+    private(set) var skippedIntermissions: Set<String> = []
+    let calendars = Calendars()
     var settings: Settings { didSet { settingsChanged(oldValue) } }
 
     private var coach: Coach
@@ -60,7 +71,7 @@ final class AppModel {
 
         // Every stored property is set; now self is usable.
         self.today = days[startOfDay]
-        presence.idleThreshold = 6 * 60
+        presence.idleThreshold = TimeInterval(settings.idleMinutes * 60)
 
         notifier.requestAuthorization()
         if ProcessInfo.processInfo.environment["INTERMISSION_TEST_NOTIFY"] != nil {
@@ -112,6 +123,7 @@ final class AppModel {
 
     private func tick() {
         let now = Date()
+        self.now = now
         rolloverIfNeeded(now)
 
         let present = presence.isPresent
@@ -121,6 +133,15 @@ final class AppModel {
         }
         timeline.tick(now)
         syncTodayFromTimeline()
+        computer.setOnComputer(present, at: now)
+        if settings.askWhatABreakWas, breakToLabel == nil, present {
+            breakToLabel = computer.unlabelledBreaks().first
+        }
+        if plan.isEmpty { rebuildPlan() }
+        phase = Phase.current(
+            plan: plan, kinds: settings.intermissions, now: now,
+            startedIntermissions: startedIntermissions
+        )
 
         schedule.reload()
         let inSession = schedule.session(covering: now) != nil
@@ -152,6 +173,11 @@ final class AppModel {
         currentDay = startOfDay
         coach.newDay()
         today = days[now]
+        startedIntermissions = []
+        skippedIntermissions = []
+        computer.prune(before: startOfDay.addingTimeInterval(-7 * 86_400))
+        rebuildPlan()
+        if settings.morningPlan && settings.isDeskDay(now) { selectedView = .plan }
     }
 
     private func syncTodayFromTimeline() {
@@ -179,6 +205,62 @@ final class AppModel {
         case .snooze: snoozedUntil = Date().addingTimeInterval(600)
         case .pauseToday: pause(until: Calendar.current.startOfDay(for: Date().addingTimeInterval(86_400)))
         }
+    }
+
+    // MARK: - Plan and intermissions
+
+    func rebuildPlan() {
+        let day = Date()
+        schedule.reload()
+        events = calendars.events(on: day, calendarIDs: settings.calendarIDs)
+        let planner = Planner(intermissions: settings.intermissions.filter { !skippedIntermissions.contains($0.id) })
+        plan = planner.plan(sessions: schedule.sessions, events: events, on: day)
+    }
+
+    func startIntermission(_ id: String) {
+        startedIntermissions.insert(id)
+        computer.startBreak(label: settings.intermissions.first { $0.id == id }?.name ?? id, at: Date())
+    }
+
+    func finishIntermission(_ id: String) {
+        startedIntermissions.remove(id)
+        computer.setOnComputer(true, at: Date())
+    }
+
+    func skipIntermission(_ id: String) {
+        skippedIntermissions.insert(id)
+        rebuildPlan()
+    }
+
+    /// "Done" on the note card: stop the reminder without waiting for the
+    /// window to run out. Standing already counted when the desk went up.
+    func noteDone() {
+        coach.cancel()
+    }
+
+    func labelBreak(_ segment: ComputerSegment, as label: String) {
+        computer.label(segmentStartingAt: segment.start, as: label)
+        breakToLabel = nil
+    }
+
+    func dismissBreakPrompt() { breakToLabel = nil }
+
+    /// Off-the-computer time today, by what it was.
+    var breaksToday: [String: TimeInterval] {
+        computer.labelledBreaks(on: currentDay, now: Date())
+    }
+
+    var offComputerToday: TimeInterval { breaksToday.values.reduce(0, +) }
+
+    var inSessionToday: TimeInterval {
+        schedule.sessions(on: currentDay).reduce(0) { total, session in
+            total + min(session.end, Date()).timeIntervalSince(session.start).clampedToZero
+        }
+    }
+
+    var intermissionsDone: Int { startedIntermissions.count }
+    var intermissionsPlanned: Int {
+        plan.filter { if case .intermission = $0.kind { return true } else { return false } }.count
     }
 
     // MARK: - Actions the views call
@@ -215,7 +297,11 @@ final class AppModel {
         guard settings != old else { return }
         coach.settings = settings
         timeline.standingThreshold = settings.standingThreshold
+        presence.idleThreshold = TimeInterval(settings.idleMinutes * 60)
         settingsStore.save(settings)
+        if settings.intermissions != old.intermissions || settings.calendarIDs != old.calendarIDs {
+            rebuildPlan()
+        }
     }
 }
 

@@ -63,3 +63,9 @@ func hoursMinutes(_ seconds: TimeInterval) -> String {
 func minutesOnly(_ seconds: TimeInterval) -> String {
     "\(Int(seconds.rounded()) / 60) min"
 }
+
+
+extension TimeInterval {
+    /// A session that hasn't started yet contributes nothing, not a negative.
+    var clampedToZero: TimeInterval { max(0, self) }
+}

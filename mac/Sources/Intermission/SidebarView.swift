@@ -11,16 +11,20 @@ struct SidebarView: View {
                 .foregroundStyle(Theme.ink)
                 .padding(.bottom, 4)
 
+            navItem(.plan, label: "Plan", meta: model.plan.isEmpty ? nil : "\(model.intermissionsPlanned) breaks")
             navItem(.today, label: "Today", meta: "\(Int((model.today.standingShare * 100).rounded()))%")
             navItem(.settings, label: "Settings", meta: nil)
 
             Spacer()
 
+            if let segment = model.breakToLabel {
+                BreakPrompt(segment: segment, model: model)
+            }
+            NowCard(model: model)
             deskCard
             Button("I just finished a session") { model.finishedSessionNow() }
                 .controlSize(.small)
                 .frame(maxWidth: .infinity)
-                .keyboardShortcut(.return, modifiers: .command)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 14)

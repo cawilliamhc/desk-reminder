@@ -41,6 +41,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Intermission reads your calendar so it can plan breaks into the gaps between sessions. It never creates or changes an event.</string>
 	<!-- GT Ultra, bundled rather than installed. -->
 	<key>ATSApplicationFontsPath</key>
 	<string>Fonts</string>
