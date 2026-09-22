@@ -100,9 +100,11 @@ private func block(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
     var day = DayPlan(day: at(9))
     day.apply(PlanEdit(intermissionID: "lunch", change: .moved(to: at(11, 30))))
     day.apply(PlanEdit(intermissionID: "lunch", change: .moved(to: at(12))))
-    day.apply(PlanEdit(intermissionID: "lunch", change: .skipped))
-    #expect(day.edits.count == 2)                  // one move, one skip
-    #expect(day.edits.contains { $0.change == .moved(to: at(12)) })
+    #expect(day.edits.count == 1)
+    #expect(day.edits.first?.change == .moved(to: at(12)))       // the later time wins
+
+    day.apply(PlanEdit(intermissionID: "reading", change: .skipped))
+    #expect(day.edits.count == 2)                                 // different things, both kept
 }
 
 @Test func theScheduleSignatureChangesWhenASessionMoves() {
@@ -133,4 +135,58 @@ private func block(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
     #expect(reloaded.isPlanned(Date()))
     #expect(reloaded[Date()].edits.count == 1)
     #expect(!reloaded.isPlanned(ancient.day))
+}
+
+
+@Test func swappingInSomethingThenMovingItGivesOneBlockNotTwo() {
+    // Carl's actual tangle: reading swapped for stretch, then stretch moved.
+    let plan = planner().plan(
+        sessions: fullDay(),
+        on: at(9),
+        edits: [
+            PlanEdit(intermissionID: "reading", change: .swapped(for: "stretch")),
+            PlanEdit(intermissionID: "stretch", change: .moved(to: at(14, 30))),
+        ]
+    )
+    let stretches = plan.filter { $0.kind == .intermission(id: "stretch") }
+    #expect(stretches.count == 1)
+    #expect(stretches.first?.start == at(14, 30))      // where he put it
+}
+
+@Test func movingSomethingSkippedMeansHeWantsItBack() {
+    var day = DayPlan(day: at(9))
+    day.apply(PlanEdit(intermissionID: "stretch", change: .skipped))
+    day.apply(PlanEdit(intermissionID: "stretch", change: .moved(to: at(14, 30))))
+    #expect(day.edits.count == 1)
+    #expect(day.edits.first?.change == .moved(to: at(14, 30)))
+}
+
+@Test func skippingSomethingMovedDropsTheMove() {
+    var day = DayPlan(day: at(9))
+    day.apply(PlanEdit(intermissionID: "stretch", change: .moved(to: at(14, 30))))
+    day.apply(PlanEdit(intermissionID: "stretch", change: .skipped))
+    #expect(day.edits.count == 1)
+    #expect(day.edits.first?.change == .skipped)
+}
+
+@Test func noIntermissionIsEverPlacedTwice() {
+    let plan = planner().plan(
+        sessions: fullDay(),
+        on: at(9),
+        edits: [
+            PlanEdit(intermissionID: "lunch", change: .moved(to: at(12))),
+            PlanEdit(intermissionID: "reading", change: .swapped(for: "lunch")),
+        ]
+    )
+    let ids = plan.compactMap { block -> String? in
+        if case .intermission(let id) = block.kind { return id }
+        return nil
+    }
+    #expect(ids.count == Set(ids).count)
+}
+
+@Test func blocksStartingTogetherAreStillTwoThings() {
+    let a = PlanBlock(kind: .open, start: at(12), end: at(13), title: "Open")
+    let b = PlanBlock(kind: .intermission(id: "lunch"), start: at(12), end: at(12, 50), title: "Lunch")
+    #expect(a.id != b.id)
 }

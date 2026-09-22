@@ -26,9 +26,16 @@ enum PlanDump {
             .joined(separator: ", ")))
         if schedule.isDayOff(Date()) { print("today is a day off — no plan") }
 
+        let plans = PlanStore(url: Paths.support.appending(path: "plans.json"))
+        let saved = plans[Date()]
+        if !saved.edits.isEmpty {
+            print("\nyour edits: " + saved.edits.map { "\($0.intermissionID) \($0.change)" }.joined(separator: ", "))
+        }
+
         let plan = Planner(intermissions: settings.intermissions).plan(
             sessions: schedule.sessions,
             on: Date(),
+            edits: saved.edits,
             configuredHours: schedule.workingHours(on: Date()),
             workingWindows: windows
         )

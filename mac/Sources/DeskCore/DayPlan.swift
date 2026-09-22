@@ -35,9 +35,16 @@ public struct DayPlan: Codable, Equatable, Sendable {
 
     public init(day: Date) { self.day = day }
 
+    /// Records a change, dropping any it contradicts.
+    ///
+    /// Moving something you'd skipped means you want it after all, and
+    /// skipping something you'd moved means you don't - keeping both is how
+    /// a plan ends up with two of one thing, one of them at a time nobody
+    /// chose.
     public mutating func apply(_ edit: PlanEdit) {
-        var kept = edits.filter {
-            !($0.intermissionID == edit.intermissionID && sameSort($0.change, edit.change))
+        var kept = edits.filter { existing in
+            guard existing.intermissionID == edit.intermissionID else { return true }
+            return !(sameSort(existing.change, edit.change) || contradicts(existing.change, edit.change))
         }
         kept.append(edit)
         edits = kept
@@ -45,6 +52,15 @@ public struct DayPlan: Codable, Equatable, Sendable {
 
     public mutating func clearEdits(for intermissionID: String) {
         edits.removeAll { $0.intermissionID == intermissionID }
+    }
+
+    private func contradicts(_ a: PlanEdit.Change, _ b: PlanEdit.Change) -> Bool {
+        switch (a, b) {
+        case (.skipped, .moved), (.moved, .skipped),
+             (.skipped, .swapped), (.swapped, .skipped),
+             (.moved, .swapped), (.swapped, .moved): true
+        default: false
+        }
     }
 
     private func sameSort(_ a: PlanEdit.Change, _ b: PlanEdit.Change) -> Bool {

@@ -10,7 +10,21 @@ public struct PlanBlock: Equatable, Identifiable, Sendable {
         case open
     }
 
-    public var id: Date { start }
+    /// Kind and time together: two blocks can start at the same instant (an
+    /// open stretch and whatever Carl pinned to its start), and a list keyed
+    /// on time alone would treat them as one.
+    public var id: String { "\(kindKey)@\(Int(start.timeIntervalSince1970))" }
+
+    private var kindKey: String {
+        switch kind {
+        case .session(let virtual): virtual ? "session-virtual" : "session"
+        case .note: "note"
+        case .calendarEvent: "calendar"
+        case .intermission(let id): "intermission-\(id)"
+        case .open: "open"
+        }
+    }
+
     public var kind: Kind
     public var start: Date
     public var end: Date
@@ -173,12 +187,31 @@ public struct Planner: Sendable {
             within(gaps(around: blocks, from: dayStart, to: dayEnd), workingWindows)
         }
 
-        for edit in edits {
+        // One block per intermission, whatever route it took onto the plan.
+        var placed = Set<String>()
+        func claim(_ id: String) -> Bool { placed.insert(id).inserted }
+
+        // An exact time is the most specific thing Carl can say, so moves and
+        // one-offs are placed before a swap that might claim the same thing.
+        let ordered = edits.sorted { a, b in
+            func rank(_ change: PlanEdit.Change) -> Int {
+                switch change {
+                case .moved, .added: 0
+                case .swapped: 1
+                case .skipped: 2
+                }
+            }
+            return rank(a.change) < rank(b.change)
+        }
+
+        for edit in ordered where !skipped.contains(edit.intermissionID) {
             switch edit.change {
             case .moved(let start):
-                guard let kind = intermissions.first(where: { $0.id == edit.intermissionID }) else { continue }
+                guard let kind = intermissions.first(where: { $0.id == edit.intermissionID }),
+                      claim(kind.id) else { continue }
                 blocks.append(fixed(kind, at: start, blocks: blocks, subline: "Moved by you"))
             case .added(let name, let minutes, let start):
+                guard claim(edit.intermissionID) else { continue }
                 blocks.append(PlanBlock(
                     kind: .intermission(id: edit.intermissionID),
                     start: start,
@@ -188,7 +221,8 @@ public struct Planner: Sendable {
                     badge: "Yours"
                 ))
             case .swapped(let replacement):
-                guard let kind = intermissions.first(where: { $0.id == replacement }) else { continue }
+                guard let kind = intermissions.first(where: { $0.id == replacement }),
+                      claim(kind.id) else { continue }
                 guard let slot = place(kind, in: free(), blocks: blocks, day: day) else { continue }
                 blocks.append(PlanBlock(
                     kind: .intermission(id: kind.id),
@@ -208,8 +242,8 @@ public struct Planner: Sendable {
         for kind in intermissions
         where kind.enabled && runsToday(kind, on: day)
             && !skipped.contains(kind.id) && !swappedAway.contains(kind.id)
-            && !edited.contains(kind.id) && !blocks.contains(where: { $0.kind == .intermission(id: kind.id) }) {
-            guard let slot = place(kind, in: free(), blocks: blocks, day: day) else { continue }
+            && !edited.contains(kind.id) && !placed.contains(kind.id) {
+            guard let slot = place(kind, in: free(), blocks: blocks, day: day), claim(kind.id) else { continue }
             blocks.append(PlanBlock(
                 kind: .intermission(id: kind.id),
                 start: slot.start,
