@@ -10,6 +10,8 @@ public struct PlanEdit: Codable, Equatable, Sendable {
         case swapped(for: String)
         /// A one-off that isn't in the regular list.
         case added(name: String, minutes: Int, at: Date)
+        /// Longer or shorter than usual, just for this day.
+        case resized(minutes: Int)
     }
 
     public var intermissionID: String
@@ -58,14 +60,16 @@ public struct DayPlan: Codable, Equatable, Sendable {
         switch (a, b) {
         case (.skipped, .moved), (.moved, .skipped),
              (.skipped, .swapped), (.swapped, .skipped),
-             (.moved, .swapped), (.swapped, .moved): true
+             (.moved, .swapped), (.swapped, .moved),
+             (.skipped, .resized), (.resized, .skipped): true
         default: false
         }
     }
 
     private func sameSort(_ a: PlanEdit.Change, _ b: PlanEdit.Change) -> Bool {
         switch (a, b) {
-        case (.moved, .moved), (.skipped, .skipped), (.swapped, .swapped), (.added, .added): true
+        case (.moved, .moved), (.skipped, .skipped), (.swapped, .swapped),
+             (.added, .added), (.resized, .resized): true
         default: false
         }
     }

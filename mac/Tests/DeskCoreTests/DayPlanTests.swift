@@ -30,6 +30,10 @@ private func block(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
     plan.first { $0.kind == .intermission(id: id) }
 }
 
+private func minutes(_ block: PlanBlock?) -> Int? {
+    block.map { Int($0.length / 60) }
+}
+
 @Test func aMovedIntermissionKeepsTheTimeCarlChose() {
     let plan = planner().plan(
         sessions: fullDay(),
@@ -190,3 +194,53 @@ private func block(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
     let b = PlanBlock(kind: .intermission(id: "lunch"), start: at(12), end: at(12, 50), title: "Lunch")
     #expect(a.id != b.id)
 }
+
+
+@Test func aResizedIntermissionKeepsTheLengthCarlDragged() {
+    let plan = planner().plan(
+        sessions: fullDay(),
+        on: at(9),
+        edits: [PlanEdit(intermissionID: "lunch", change: .resized(minutes: 30))]
+    )
+    #expect(minutes(block(plan, "lunch")) == 30)
+}
+
+@Test func resizingAndMovingTogetherBothHold() {
+    let plan = planner().plan(
+        sessions: fullDay(),
+        on: at(9),
+        edits: [
+            PlanEdit(intermissionID: "lunch", change: .moved(to: at(12))),
+            PlanEdit(intermissionID: "lunch", change: .resized(minutes: 35)),
+        ]
+    )
+    let lunch = block(plan, "lunch")
+    #expect(lunch?.start == at(12))
+    #expect(minutes(lunch) == 35)
+}
+
+@Test func aResizeCannotShrinkToNothing() {
+    let plan = planner().plan(
+        sessions: fullDay(),
+        on: at(9),
+        edits: [PlanEdit(intermissionID: "lunch", change: .resized(minutes: 0))]
+    )
+    #expect(minutes(block(plan, "lunch")) == 5)
+}
+
+@Test func skippingDropsAResize() {
+    var day = DayPlan(day: at(9))
+    day.apply(PlanEdit(intermissionID: "lunch", change: .resized(minutes: 30)))
+    day.apply(PlanEdit(intermissionID: "lunch", change: .skipped))
+    #expect(day.edits.count == 1)
+    #expect(day.edits.first?.change == .skipped)
+}
+
+@Test func aSecondResizeReplacesTheFirst() {
+    var day = DayPlan(day: at(9))
+    day.apply(PlanEdit(intermissionID: "lunch", change: .resized(minutes: 30)))
+    day.apply(PlanEdit(intermissionID: "lunch", change: .resized(minutes: 40)))
+    #expect(day.edits.count == 1)
+    #expect(day.edits.first?.change == .resized(minutes: 40))
+}
+

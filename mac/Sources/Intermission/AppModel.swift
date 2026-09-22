@@ -321,6 +321,12 @@ final class AppModel {
         rebuildPlan()
     }
 
+    /// Nudging a block with the keyboard, for when a drag is the wrong tool.
+    func nudge(_ intermissionID: String, byMinutes minutes: Int) {
+        guard let block = shownPlan.first(where: { $0.kind == .intermission(id: intermissionID) }) else { return }
+        apply(.moved(to: block.start.addingTimeInterval(TimeInterval(minutes * 60))), to: intermissionID)
+    }
+
     func undoEdits(for intermissionID: String) {
         var day = plans[shownDate]
         day.clearEdits(for: intermissionID)

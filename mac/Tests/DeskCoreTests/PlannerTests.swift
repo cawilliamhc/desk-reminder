@@ -272,7 +272,7 @@ private func packed(_ sessions: [PublishedSession], _ kinds: [IntermissionKind])
     #expect(block != nil)
     #expect(block!.isShortened)
     #expect(block!.start == at(12, 35))                     // after the note window
-    #expect(block!.length == 25 * 60)
+    #expect(Int(block!.length / 60) == 25)
     #expect(block!.subline?.contains("gaps are tight") == true)
 }
 

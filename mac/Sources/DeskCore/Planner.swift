@@ -202,6 +202,15 @@ public struct Planner: Sendable {
         var placed = Set<String>()
         func claim(_ id: String) -> Bool { placed.insert(id).inserted }
 
+        // A length Carl set by hand, for today only.
+        var resized: [String: Int] = [:]
+        for edit in edits {
+            if case .resized(let minutes) = edit.change { resized[edit.intermissionID] = minutes }
+        }
+        func length(_ kind: IntermissionKind) -> TimeInterval {
+            resized[kind.id].map { TimeInterval(max(5, $0) * 60) } ?? kind.length
+        }
+
         // An exact time is the most specific thing Carl can say, so moves and
         // one-offs are placed before a swap that might claim the same thing.
         let ordered = edits.sorted { a, b in
@@ -209,7 +218,7 @@ public struct Planner: Sendable {
                 switch change {
                 case .moved, .added: 0
                 case .swapped: 1
-                case .skipped: 2
+                case .skipped, .resized: 2      // resize is applied above, not placed
                 }
             }
             return rank(a.change) < rank(b.change)
@@ -220,7 +229,9 @@ public struct Planner: Sendable {
             case .moved(let start):
                 guard let kind = intermissions.first(where: { $0.id == edit.intermissionID }),
                       claim(kind.id) else { continue }
-                blocks.append(fixed(kind, at: start, blocks: blocks, subline: "Moved by you"))
+                blocks.append(fixed(kind, at: start, length: length(kind), blocks: blocks, subline: "Moved by you"))
+            case .resized:
+                continue
             case .added(let name, let minutes, let start):
                 guard claim(edit.intermissionID) else { continue }
                 blocks.append(PlanBlock(
@@ -235,7 +246,7 @@ public struct Planner: Sendable {
                 guard let kind = intermissions.first(where: { $0.id == replacement }),
                       claim(kind.id) else { continue }
                 guard let slot = place(kind, in: free(), blocks: blocks, day: day) else { continue }
-                let length = slot.length ?? kind.length
+                let length = resized[kind.id].map { TimeInterval(max(5, $0) * 60) } ?? slot.length ?? kind.length
                 blocks.append(PlanBlock(
                     kind: .intermission(id: kind.id),
                     start: slot.start,
@@ -250,14 +261,21 @@ public struct Planner: Sendable {
             }
         }
 
-        let edited = Set(edits.map(\.intermissionID))
+        // Only the edits that PLACE something count as handled here. A resize
+        // says how long, not where, so the suggestion still has to be laid out.
+        let edited = Set(edits.compactMap { edit -> String? in
+            switch edit.change {
+            case .moved, .added, .swapped: edit.intermissionID
+            case .skipped, .resized: nil
+            }
+        })
         // Then the untouched suggestions, into what's left.
         for kind in intermissions
         where kind.enabled && runsToday(kind, on: day)
             && !skipped.contains(kind.id) && !swappedAway.contains(kind.id)
             && !edited.contains(kind.id) && !placed.contains(kind.id) {
             guard let slot = place(kind, in: free(), blocks: blocks, day: day), claim(kind.id) else { continue }
-            let length = slot.length ?? kind.length
+            let length = resized[kind.id].map { TimeInterval(max(5, $0) * 60) } ?? slot.length ?? kind.length
             blocks.append(PlanBlock(
                 kind: .intermission(id: kind.id),
                 start: slot.start,
@@ -295,13 +313,16 @@ public struct Planner: Sendable {
     /// A block Carl placed himself. It keeps its time even when the day has
     /// moved under it - the plan says it overlaps rather than quietly moving
     /// what he asked for.
-    private func fixed(_ kind: IntermissionKind, at start: Date, blocks: [PlanBlock], subline: String) -> PlanBlock {
+    private func fixed(
+        _ kind: IntermissionKind, at start: Date, length: TimeInterval,
+        blocks: [PlanBlock], subline: String
+    ) -> PlanBlock {
         PlanBlock(
             kind: .intermission(id: kind.id),
             start: start,
-            end: start.addingTimeInterval(kind.length),
+            end: start.addingTimeInterval(length),
             title: kind.name,
-            subline: collides(start, minutes: kind.minutes, with: blocks) ? "Overlaps what's booked" : subline,
+            subline: collides(start, minutes: Int(length / 60), with: blocks) ? "Overlaps what's booked" : subline,
             badge: "Yours"
         )
     }
