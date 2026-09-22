@@ -109,7 +109,8 @@ public struct Planner: Sendable {
         on day: Date,
         edits: [PlanEdit] = [],
         workday: DateInterval? = nil,
-        configuredHours: DateInterval? = nil
+        configuredHours: DateInterval? = nil,
+        workingWindows: [DateInterval] = []
     ) -> [PlanBlock] {
         let window = workday ?? self.workday(
             sessions: sessions, events: events, on: day, configuredHours: configuredHours
@@ -168,6 +169,10 @@ public struct Planner: Sendable {
             return nil
         })
 
+        func free() -> [Gap] {
+            within(gaps(around: blocks, from: dayStart, to: dayEnd), workingWindows)
+        }
+
         for edit in edits {
             switch edit.change {
             case .moved(let start):
@@ -184,8 +189,7 @@ public struct Planner: Sendable {
                 ))
             case .swapped(let replacement):
                 guard let kind = intermissions.first(where: { $0.id == replacement }) else { continue }
-                let slots = gaps(around: blocks, from: dayStart, to: dayEnd)
-                guard let slot = place(kind, in: slots, blocks: blocks, day: day) else { continue }
+                guard let slot = place(kind, in: free(), blocks: blocks, day: day) else { continue }
                 blocks.append(PlanBlock(
                     kind: .intermission(id: kind.id),
                     start: slot.start,
@@ -205,8 +209,7 @@ public struct Planner: Sendable {
         where kind.enabled && runsToday(kind, on: day)
             && !skipped.contains(kind.id) && !swappedAway.contains(kind.id)
             && !edited.contains(kind.id) && !blocks.contains(where: { $0.kind == .intermission(id: kind.id) }) {
-            let slots = gaps(around: blocks, from: dayStart, to: dayEnd)
-            guard let slot = place(kind, in: slots, blocks: blocks, day: day) else { continue }
+            guard let slot = place(kind, in: free(), blocks: blocks, day: day) else { continue }
             blocks.append(PlanBlock(
                 kind: .intermission(id: kind.id),
                 start: slot.start,
@@ -312,6 +315,19 @@ public struct Planner: Sendable {
             }
             guard let any = fits.max(by: { $0.length < $1.length }) else { return nil }
             return Slot(start: any.start, subline: nil)
+        }
+    }
+
+    /// Trims gaps to the working windows, so a Thursday's 10:30-13:30 hole
+    /// isn't offered as somewhere to put lunch.
+    private func within(_ gaps: [Gap], _ windows: [DateInterval]) -> [Gap] {
+        guard !windows.isEmpty else { return gaps }
+        return gaps.flatMap { gap in
+            windows.compactMap { window -> Gap? in
+                let start = max(gap.start, window.start)
+                let end = min(gap.end, window.end)
+                return end > start ? Gap(start: start, end: end) : nil
+            }
         }
     }
 

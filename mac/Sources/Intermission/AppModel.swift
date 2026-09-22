@@ -230,7 +230,8 @@ final class AppModel {
             sessions: schedule.sessions,
             events: events,
             on: day,
-            configuredHours: schedule.workingHours(on: day)
+            configuredHours: schedule.workingHours(on: day),
+            workingWindows: schedule.workingWindows(on: day)
         )
     }
 

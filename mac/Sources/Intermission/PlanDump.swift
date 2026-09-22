@@ -20,7 +20,18 @@ enum PlanDump {
             print("  \(session.start.formatted(time)) – \(session.end.formatted(time))  \(session.mode.rawValue)")
         }
 
-        let plan = Planner(intermissions: settings.intermissions).plan(sessions: schedule.sessions, on: Date())
+        let windows = schedule.workingWindows(on: Date())
+        print("\nworking windows: " + (windows.isEmpty ? "none configured" : windows
+            .map { "\($0.start.formatted(time)) – \($0.end.formatted(time))" }
+            .joined(separator: ", ")))
+        if schedule.isDayOff(Date()) { print("today is a day off — no plan") }
+
+        let plan = Planner(intermissions: settings.intermissions).plan(
+            sessions: schedule.sessions,
+            on: Date(),
+            configuredHours: schedule.workingHours(on: Date()),
+            workingWindows: windows
+        )
         print("\nplan: \(plan.count) blocks")
         for block in plan {
             let kind = switch block.kind {

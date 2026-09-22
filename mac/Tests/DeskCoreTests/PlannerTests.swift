@@ -227,3 +227,29 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
     #expect(plan.first?.start == at(9, 30))
     #expect(plan.allSatisfy { $0.start >= at(9, 30) })
 }
+
+
+@Test func aGapBetweenWorkingWindowsIsNotSomewhereToPutABreak() {
+    // Carl's Thursday: 9:00-10:30, then nothing until 13:30.
+    let windows = [
+        DateInterval(start: at(9), end: at(10, 30)),
+        DateInterval(start: at(13, 30), end: at(17)),
+    ]
+    let lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
+    let plan = planner([lunch]).plan(
+        sessions: [session(9, 30, to: 10, 20), session(14, to: 14, 50)],
+        on: at(9),
+        configuredHours: DateInterval(start: at(9), end: at(17)),
+        workingWindows: windows
+    )
+    let block = intermission(plan, "lunch")
+    #expect(block != nil)
+    // Anywhere but the 10:30-13:30 hole.
+    #expect(block!.start >= at(13, 30) || block!.end <= at(10, 30))
+}
+
+@Test func withoutConfiguredWindowsTheWholeDayIsAvailable() {
+    let lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
+    let plan = planner([lunch]).plan(sessions: fullDay(), on: at(9), workingWindows: [])
+    #expect(intermission(plan, "lunch")?.start == at(12, 30))
+}

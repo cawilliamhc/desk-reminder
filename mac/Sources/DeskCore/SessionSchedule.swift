@@ -94,20 +94,37 @@ public struct SessionSchedule: Sendable {
         sessions.filter { calendar.isDate($0.start, inSameDayAs: day) }
     }
 
-    /// The hours for a weekday, earliest start to latest end. Nil when
-    /// availability hasn't been set up, or that day has none - a day with no
-    /// window is a day he doesn't work.
-    public func workingHours(on day: Date, calendar: Calendar = .current) -> DateInterval? {
-        guard !hours.isEmpty else { return nil }
+    /// The working windows for a weekday, in order.
+    ///
+    /// A day can have more than one - Carl's Thursday is 9:00-10:30 and then
+    /// 13:30-17:00 - and the gap between them is not his to fill. So the
+    /// windows are kept apart rather than flattened into open-to-close.
+    /// Empty when availability isn't set up, or the day has none: a day with
+    /// no window is a day he doesn't work.
+    public func workingWindows(on day: Date, calendar: Calendar = .current) -> [DateInterval] {
+        guard !hours.isEmpty else { return [] }
         let weekday = calendar.component(.weekday, from: day)
-        let todays = hours.filter { $0.weekday == weekday }
-        guard let open = todays.map(\.startMinutes).min(),
-              let close = todays.map(\.endMinutes).max(),
-              close > open,
-              let start = calendar.date(bySettingHour: open / 60, minute: open % 60, second: 0, of: day),
-              let end = calendar.date(bySettingHour: close / 60, minute: close % 60, second: 0, of: day)
-        else { return nil }
-        return DateInterval(start: start, end: end)
+        return hours
+            .filter { $0.weekday == weekday && $0.endMinutes > $0.startMinutes }
+            .compactMap { window in
+                guard let start = calendar.date(
+                        bySettingHour: window.startMinutes / 60,
+                        minute: window.startMinutes % 60, second: 0, of: day),
+                      let end = calendar.date(
+                        bySettingHour: window.endMinutes / 60,
+                        minute: window.endMinutes % 60, second: 0, of: day)
+                else { return nil }
+                return DateInterval(start: start, end: end)
+            }
+            .sorted { $0.start < $1.start }
+    }
+
+    /// Open to close for a weekday, gaps included. For the plan's outer
+    /// bounds; `workingWindows` is what says where things may be placed.
+    public func workingHours(on day: Date, calendar: Calendar = .current) -> DateInterval? {
+        let windows = workingWindows(on: day, calendar: calendar)
+        guard let first = windows.first, let last = windows.last else { return nil }
+        return DateInterval(start: first.start, end: last.end)
     }
 
     public func isDayOff(_ day: Date, calendar: Calendar = .current) -> Bool {
