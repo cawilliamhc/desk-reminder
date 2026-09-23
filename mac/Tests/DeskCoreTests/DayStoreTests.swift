@@ -47,7 +47,7 @@ private func store(_ file: String = UUID().uuidString) -> DayStore {
 @Test func streakCountsDaysOverGoal() {
     var s = store()
     for d in 18...22 {
-        s.update(day(d)) { $0.standing = 30; $0.sitting = 70 }   // 30%
+        s.update(day(d)) { $0.standing = 30 * 60; $0.sitting = 70 * 60 }   // 30% of a 100-minute day
     }
     #expect(s.streak(endingOn: day(22), goal: 0.2) == 5)
     #expect(s.streak(endingOn: day(22), goal: 0.4) == 0)
@@ -55,17 +55,17 @@ private func store(_ file: String = UUID().uuidString) -> DayStore {
 
 @Test func aRestDayNeitherBreaksNorExtendsAStreak() {
     var s = store()
-    s.update(day(22)) { $0.standing = 30; $0.sitting = 70 }
+    s.update(day(22)) { $0.standing = 30 * 60; $0.sitting = 70 * 60 }
     s.update(day(21)) { $0.isDeskDay = false }                   // rest day, nothing logged
-    s.update(day(20)) { $0.standing = 30; $0.sitting = 70 }
+    s.update(day(20)) { $0.standing = 30 * 60; $0.sitting = 70 * 60 }
     #expect(s.streak(endingOn: day(22), goal: 0.2) == 2)
 }
 
 @Test func aDayUnderGoalEndsTheStreak() {
     var s = store()
-    s.update(day(22)) { $0.standing = 30; $0.sitting = 70 }
-    s.update(day(21)) { $0.standing = 5; $0.sitting = 95 }
-    s.update(day(20)) { $0.standing = 30; $0.sitting = 70 }
+    s.update(day(22)) { $0.standing = 30 * 60; $0.sitting = 70 * 60 }
+    s.update(day(21)) { $0.standing = 5 * 60; $0.sitting = 95 * 60 }
+    s.update(day(20)) { $0.standing = 30 * 60; $0.sitting = 70 * 60 }
     #expect(s.streak(endingOn: day(22), goal: 0.2) == 1)
     #expect(s.bestStreak(goal: 0.2) == 1)
 }
