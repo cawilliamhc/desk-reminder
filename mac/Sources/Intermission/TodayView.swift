@@ -4,6 +4,7 @@ import SwiftUI
 
 struct TodayView: View {
     @Bindable var model: AppModel
+    @State private var hoveredDay: Date?
 
     var body: some View {
         ScrollView {
@@ -81,6 +82,22 @@ struct TodayView: View {
         }
     }
 
+    /// The day the pointer is over, and what it was.
+    private var hoveredDayText: String? {
+        guard let hoveredDay, let record = model.week.first(where: { $0.day == hoveredDay }) else { return nil }
+        let weekday = record.day.formatted(.dateTime.weekday(.abbreviated))
+        guard record.atDesk > 0 else {
+            return record.isDeskDay ? "\(weekday) · nothing logged" : "\(weekday) · rest day"
+        }
+        return "\(weekday) · \(Int((record.standingShare * 100).rounded()))% · \(hoursMinutes(record.standing)) up of \(hoursMinutes(record.atDesk))"
+    }
+
+    private func opacity(for day: DayRecord) -> Double {
+        let base = day.isDeskDay ? 1.0 : 0.35
+        guard let hoveredDay else { return base }
+        return day.day == hoveredDay ? base : base * 0.45
+    }
+
     private var breakdown: String {
         let named = model.breaksToday
             .sorted { $0.value > $1.value }
@@ -104,8 +121,13 @@ struct TodayView: View {
             HStack {
                 Text("This week").font(Theme.ui(13, weight: .medium)).foregroundStyle(Theme.ink)
                 Spacer()
-                Text("\(model.week.filter { $0.isDeskDay }.count) desk days")
-                    .font(Theme.ui(11)).foregroundStyle(Theme.muted)
+                Text(hoveredDayText ?? "\(model.week.filter { $0.isDeskDay }.count) desk days")
+                    .font(Theme.ui(11))
+                    .monospacedDigit()
+                    .foregroundStyle(hoveredDay == nil ? Theme.muted : Theme.ink)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(hoveredDay == nil ? .clear : Theme.background)
+                    .clipShape(Capsule())
             }
             Chart {
                 ForEach(model.week, id: \.day) { day in
@@ -116,11 +138,32 @@ struct TodayView: View {
                     .foregroundStyle(
                         day.standingShare >= model.settings.standingGoal ? Theme.standing : Theme.reading
                     )
-                    .opacity(day.isDeskDay ? 1 : 0.35)
+                    .opacity(opacity(for: day))
                 }
                 RuleMark(y: .value("Goal", model.settings.standingGoal * 100))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
                     .foregroundStyle(Theme.muted)
+            }
+            // Hovering a bar says what that day was, beside the heading.
+            .chartOverlay { proxy in
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(.clear)
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let point):
+                                guard let plot = proxy.plotFrame else { return }
+                                let x = point.x - geometry[plot].origin.x
+                                guard let date: Date = proxy.value(atX: x) else { return }
+                                hoveredDay = model.week.min {
+                                    abs($0.day.timeIntervalSince(date)) < abs($1.day.timeIntervalSince(date))
+                                }?.day
+                            case .ended:
+                                hoveredDay = nil
+                            }
+                        }
+                }
             }
             .chartYAxis { AxisMarks(values: .automatic(desiredCount: 3)) }
             .chartXAxis {

@@ -19,6 +19,7 @@ struct DayStrip: View {
                                 .frame(width: width(of: block, in: geometry.size.width))
                                 .offset(x: x(block.start, in: geometry.size.width))
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .help("\(block.title) · \(block.start.formatted(date: .omitted, time: .shortened))–\(block.end.formatted(date: .omitted, time: .shortened))")
                         }
                     }
                 }
