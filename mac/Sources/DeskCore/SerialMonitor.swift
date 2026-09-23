@@ -43,7 +43,14 @@ public final class SerialMonitor: @unchecked Sendable {
     private let onHeight: @Sendable (Double, Date) -> Void
     private let onStatus: @Sendable (Status) -> Void
     private let queue = DispatchQueue(label: "desk.serial")
+    private let lock = NSLock()
     private var stopped = false
+
+    private var isStopped: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return stopped
+    }
 
     public init(
         onHeight: @escaping @Sendable (Double, Date) -> Void,
@@ -68,12 +75,17 @@ public final class SerialMonitor: @unchecked Sendable {
         queue.async { [weak self] in self?.loop() }
     }
 
+    /// Stops reading and lets the port close. Must not touch the queue the
+    /// read loop runs on: stop() used to queue.sync onto it, which deadlocked
+    /// against the loop it was trying to stop.
     public func stop() {
-        queue.sync { stopped = true }
+        lock.lock()
+        stopped = true
+        lock.unlock()
     }
 
     private func loop() {
-        while !stopped {
+        while !isStopped {
             guard let port = Self.findPort() else {
                 onStatus(.adapterNotFound)
                 Thread.sleep(forTimeInterval: 5)
@@ -127,7 +139,7 @@ public final class SerialMonitor: @unchecked Sendable {
     private func read(fd: Int32) {
         var parser = FrameParser()
         var buffer = [UInt8](repeating: 0, count: 256)
-        while !stopped {
+        while !isStopped {
             let n = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, 256) }
             if n < 0 {
                 if errno == EINTR || errno == EAGAIN { continue }

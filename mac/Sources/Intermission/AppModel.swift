@@ -127,7 +127,8 @@ final class AppModel {
         return "\(glyph) \(mark)\(String(format: "%.1f", height))″" + paused
     }
 
-    private func start() {
+    private func startListening() {
+        guard monitor == nil else { return }
         let monitor = SerialMonitor(
             onHeight: { [weak self] height, at in
                 Task { @MainActor in self?.heightReported(height, at: at) }
@@ -138,7 +139,16 @@ final class AppModel {
         )
         monitor.start()
         self.monitor = monitor
+    }
 
+    private func stopListening() {
+        monitor?.stop()
+        monitor = nil
+        adapterStatus = .adapterNotFound
+    }
+
+    private func start() {
+        if settings.listenToDesk { startListening() }
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
@@ -664,6 +674,9 @@ final class AppModel {
         timeline.standingThreshold = settings.standingThreshold
         presence.idleThreshold = TimeInterval(settings.idleMinutes * 60)
         settingsStore.save(settings)
+        if settings.listenToDesk != old.listenToDesk {
+            settings.listenToDesk ? startListening() : stopListening()
+        }
         if settings.intermissions != old.intermissions || settings.calendarIDs != old.calendarIDs {
             rebuildPlan()
         }

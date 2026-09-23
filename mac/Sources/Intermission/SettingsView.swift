@@ -36,6 +36,9 @@ struct SettingsView: View {
                                 .frame(width: 40, alignment: .trailing)
                         }
                     }
+                    row("Listen to the desk", "Off, the port is closed and the height is whatever it last was.") {
+                        Toggle("", isOn: $model.settings.listenToDesk).labelsHidden().toggleStyle(.switch)
+                    }
                     row("Adapter", adapterDetail) { EmptyView() }
                 }
 

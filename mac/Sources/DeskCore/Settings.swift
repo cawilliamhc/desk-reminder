@@ -11,6 +11,9 @@ public enum Weekday: Int, Codable, CaseIterable, Sendable {
 /// Everything the Settings view writes. Stage 1 covers Desk, Notes and Coach;
 /// intermissions and calendars join in later stages.
 public struct Settings: Codable, Equatable, Sendable {
+    /// Whether to hold the serial port open at all. Off, the app still plans
+    /// and nudges; it just doesn't know the desk's height.
+    public var listenToDesk: Bool = true
     public var standingThreshold: Double = 40
     /// Share of at-desk time (sessions excluded) to aim for.
     public var standingGoal: Double = 0.20
