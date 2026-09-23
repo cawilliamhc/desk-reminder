@@ -69,3 +69,23 @@ private func store(_ file: String = UUID().uuidString) -> DayStore {
     #expect(s.streak(endingOn: day(22), goal: 0.2) == 1)
     #expect(s.bestStreak(goal: 0.2) == 1)
 }
+
+
+@Test func aHandfulOfSecondsIsNotADay() {
+    var scrap = DayRecord(day: day(21))
+    scrap.standing = 7                      // what a restart leaves behind
+    #expect(!scrap.isRecorded)
+    #expect(scrap.standingShare == 1.0)     // the share is real, the day isn't
+
+    var real = DayRecord(day: day(22))
+    real.standing = 300
+    #expect(real.isRecorded)
+}
+
+@Test func aScrapOfADayNeitherMakesNorBreaksAStreak() {
+    var s = store()
+    s.update(day(22)) { $0.standing = 1800; $0.sitting = 1800 }
+    s.update(day(21)) { $0.standing = 7 }                        // seven seconds
+    s.update(day(20)) { $0.standing = 1800; $0.sitting = 1800 }
+    #expect(s.streak(endingOn: day(22), goal: 0.2) == 2)
+}

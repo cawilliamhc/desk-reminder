@@ -17,6 +17,11 @@ public struct DayRecord: Codable, Equatable, Sendable {
     public init(day: Date) { self.day = day }
 
     public var atDesk: TimeInterval { standing + sitting }
+
+    /// Less than this at the desk isn't a day, it's a few stray seconds from
+    /// a restart. Yesterday once read 100% standing on seven seconds.
+    public static let enoughToCount: TimeInterval = 5 * 60
+    public var isRecorded: Bool { atDesk >= Self.enoughToCount }
     /// Sessions are excluded from the denominator: the desk is down for them
     /// by definition, and counting them would drown the number Carl is moving.
     public var standingShare: Double { atDesk > 0 ? standing / atDesk : 0 }
@@ -59,7 +64,7 @@ public struct DayStore: Sendable {
         var cursor = calendar.startOfDay(for: day)
         for _ in 0..<365 {
             let record = self[cursor]
-            if record.isDeskDay && record.atDesk > 0 {
+            if record.isDeskDay && record.isRecorded {
                 guard record.standingShare >= goal else { return streak }
                 streak += 1
             }

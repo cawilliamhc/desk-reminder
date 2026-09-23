@@ -200,7 +200,7 @@ struct PlanView: View {
 
     private var yesterday: String {
         let record = model.planDay == .today ? model.week.dropLast().last : model.week.last
-        guard let record, record.atDesk > 0 else {
+        guard let record, record.isRecorded else {
             return "No desk time recorded — the app wasn't watching."
         }
         return "Stood \(Int((record.standingShare * 100).rounded()))% of \(hoursMinutes(record.atDesk)) at the desk, \(record.notesStanding) of \(record.notesTotal) notes standing."

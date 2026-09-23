@@ -86,7 +86,7 @@ struct TodayView: View {
     private var hoveredDayText: String? {
         guard let hoveredDay, let record = model.week.first(where: { $0.day == hoveredDay }) else { return nil }
         let weekday = record.day.formatted(.dateTime.weekday(.abbreviated))
-        guard record.atDesk > 0 else {
+        guard record.isRecorded else {
             return record.isDeskDay ? "\(weekday) · no desk time recorded" : "\(weekday) · rest day"
         }
         return "\(weekday) · \(Int((record.standingShare * 100).rounded()))% · \(hoursMinutes(record.standing)) up of \(hoursMinutes(record.atDesk))"
@@ -133,7 +133,7 @@ struct TodayView: View {
                 // A day with nothing logged draws nothing: a zero bar reads
                 // as "you never stood", and the truth is "nobody was
                 // watching".
-                ForEach(model.week.filter { $0.atDesk > 0 }, id: \.day) { day in
+                ForEach(model.week.filter(\.isRecorded), id: \.day) { day in
                     BarMark(
                         x: .value("Day", day.day, unit: .day),
                         y: .value("Standing", day.standingShare * 100)
