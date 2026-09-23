@@ -2,7 +2,13 @@ import Darwin
 import Foundation
 
 /// Reads height reports from the FTDI adapter. Receive-only by construction:
-/// nothing here ever writes to the port.
+/// nothing here ever writes to the port, the port is opened read-only, and
+/// DTR, RTS and break are all cleared after opening.
+///
+/// This matters more than it sounds. The control box reads its line going
+/// low as the start of a byte, and answers with a click and a lit handset -
+/// so a stray edge from opening the port is something Carl hears from across
+/// the room.
 ///
 /// The port is opened non-blocking, then has the blocking flag cleared, which
 /// is the usual dance for a /dev/cu.* device. A dropped adapter surfaces as a
@@ -103,6 +109,17 @@ public final class SerialMonitor: @unchecked Sendable {
             cc[Int(VTIME)] = 2                           // 0.2 s read timeout
         }
         guard tcsetattr(fd, TCSANOW, &options) == 0 else { close(fd); return nil }
+
+        // Drop DTR and RTS, and make sure no break is being sent.
+        //
+        // The Python version did this and the Swift one didn't, which is the
+        // sort of difference that ends with the desk's handset clicking: the
+        // box treats a line going low as the start of a byte. Nothing here
+        // ever writes, and these three calls are the belt to that braces.
+        var lines: Int32 = TIOCM_DTR | TIOCM_RTS
+        _ = ioctl(fd, TIOCMBIC, &lines)
+        _ = ioctl(fd, TIOCCBRK)
+
         tcflush(fd, TCIFLUSH)
         return fd
     }
