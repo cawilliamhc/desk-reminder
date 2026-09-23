@@ -55,9 +55,25 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 echo "</plist>" >> "$APP/Contents/Info.plist"
 
+# Signed with the self-signed "Client Studio" certificate when it's in the
+# keychain, ad hoc otherwise.
+#
+# This is what stops macOS forgetting the calendar permission on every build.
+# An ad-hoc signature's designated requirement is a cdhash, which changes
+# every time the binary does, so each build looks like a different app and
+# TCC starts again from nothing. A certificate makes the requirement
+# "this bundle id, signed by this certificate", which survives a rebuild.
+#
 # No --entitlements: the time-sensitive entitlement needs a provisioning
-# profile from a paid developer account, and an ad-hoc signature carrying it
+# profile from a paid developer account, and a self-signed bundle carrying it
 # is refused at launch (RBSRequestErrorDomain 5). Focus break-through is done
 # by allowing Intermission in the Focus's own app list instead.
-codesign --force --sign - --identifier com.carlwilliamson.intermission "$APP"
+IDENTITY=${INTERMISSION_SIGNING_IDENTITY:-Client Studio}
+if security find-identity -v -p codesigning | grep -q "$IDENTITY"; then
+	codesign --force --sign "$IDENTITY" --identifier com.carlwilliamson.intermission "$APP"
+	echo "signed with $IDENTITY"
+else
+	codesign --force --sign - --identifier com.carlwilliamson.intermission "$APP"
+	echo "signed ad hoc — macOS will forget its permissions on the next build"
+fi
 echo "built $APP"

@@ -9,28 +9,47 @@ struct DayLanes: View {
     private let startHour = Planner.dayStartHour
     private let endHour = Planner.dayEndHour
 
+    /// Whatever the pointer is over, so the lanes can name it and pick it out.
+    @State private var hovered: String?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("The day so far").font(Theme.ui(13, weight: .medium)).foregroundStyle(Theme.ink)
+                Spacer()
+                Text(hovered ?? " ")
+                    .font(Theme.ui(11))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.ink)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(hovered == nil ? .clear : Theme.background)
+                    .clipShape(Capsule())
+                    .animation(.easeOut(duration: 0.1), value: hovered)
+            }
+            .padding(.bottom, 2)
             lane("Planned", height: 12, dot: true) { width in
                 ForEach(model.plan) { block in
                     bar(from: block.start, to: block.end, width: width,
-                        color: model.color(for: block.kind).opacity(block.kind == .open ? 0 : 0.55))
+                        color: model.color(for: block.kind).opacity(block.kind == .open ? 0 : 0.55),
+                        tip: "\(block.title) · \(span(block.start, block.end))")
                 }
             }
             lane("Calendar", height: 14) { width in
                 ForEach(model.events, id: \.start) { event in
-                    bar(from: event.start, to: event.end, width: width, color: Theme.calendar)
+                    bar(from: event.start, to: event.end, width: width, color: Theme.calendar,
+                        tip: "\(event.title) · \(span(event.start, event.end))")
                 }
             }
             lane("Computer", height: 30) { width in
                 ForEach(model.computer.segments(on: model.now, now: model.now)) { segment in
                     bar(from: segment.start, to: segment.end ?? model.now, width: width,
-                        color: computerColor(segment))
+                        color: computerColor(segment),
+                        tip: computerTip(segment))
                 }
             }
             lane("Desk", height: 18) { width in
                 ForEach(deskBars, id: \.start) { item in
-                    bar(from: item.start, to: item.end, width: width, color: item.color)
+                    bar(from: item.start, to: item.end, width: width, color: item.color, tip: item.tip)
                 }
             }
             axis
@@ -58,14 +77,25 @@ struct DayLanes: View {
         }
     }
 
-    private func bar(from start: Date, to end: Date, width: CGFloat, color: Color) -> some View {
+    private func bar(from start: Date, to end: Date, width: CGFloat, color: Color, tip: String) -> some View {
         let x = offset(start, width: width)
         let w = max(1, offset(end, width: width) - x)
         return RoundedRectangle(cornerRadius: 2)
             .fill(color)
+            .overlay(
+                RoundedRectangle(cornerRadius: 2)
+                    .stroke(Theme.ink, lineWidth: hovered == tip ? 1.5 : 0)
+            )
+            .brightness(hovered == tip ? -0.06 : 0)
             .frame(width: w)
             .offset(x: x)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .onHover { hovering in
+                // The label at the top of the lanes says what it is; the
+                // tooltip is there for a bar too narrow to hover comfortably.
+                hovered = hovering ? tip : (hovered == tip ? nil : hovered)
+            }
+            .help(tip)
     }
 
     /// Where we are in the day. Red, with a dot at its head on the top lane,
@@ -132,6 +162,17 @@ struct DayLanes: View {
 
     // MARK: - Data
 
+    private func span(_ start: Date, _ end: Date) -> String {
+        let time = Date.FormatStyle(date: .omitted, time: .shortened)
+        return "\(start.formatted(time))–\(end.formatted(time))"
+    }
+
+    private func computerTip(_ segment: ComputerSegment) -> String {
+        let when = span(segment.start, segment.end ?? model.now)
+        let what = segment.isOnComputer ? "On the computer" : (segment.label ?? "Away")
+        return "\(what) · \(when) · \(minutesOnly(segment.duration(now: model.now)))"
+    }
+
     private func computerColor(_ segment: ComputerSegment) -> Color {
         if segment.isOnComputer { return Theme.ink.opacity(0.22) }
         guard let label = segment.label else { return .clear }   // away, unnamed: a gap
@@ -145,16 +186,25 @@ struct DayLanes: View {
 
     /// The desk lane: the actual stretches the desk spent up and down, with
     /// session time drawn over the top since the desk is down for those.
-    private var deskBars: [(start: Date, end: Date, color: Color)] {
-        var bars: [(Date, Date, Color)] = model.heights
+    private var deskBars: [(start: Date, end: Date, color: Color, tip: String)] {
+        var bars: [(Date, Date, Color, String)] = model.heights
             .segments(on: model.now)
-            .map { ($0.start, $0.end ?? model.now, $0.isStanding ? Theme.standing : Theme.sitting) }
+            .map { stretch in
+                let end = stretch.end ?? model.now
+                let what = stretch.isStanding ? "Standing" : "Sitting"
+                return (
+                    stretch.start, end,
+                    stretch.isStanding ? Theme.standing : Theme.sitting,
+                    "\(what) · \(span(stretch.start, end)) · \(minutesOnly(end.timeIntervalSince(stretch.start)))"
+                )
+            }
         for block in model.plan {
             if case .session = block.kind, block.start < model.now {
-                bars.append((block.start, min(block.end, model.now), Theme.session))
+                let end = min(block.end, model.now)
+                bars.append((block.start, end, Theme.session, "In session · \(span(block.start, block.end))"))
             }
         }
-        return bars.map { (start: $0.0, end: $0.1, color: $0.2) }
+        return bars.map { (start: $0.0, end: $0.1, color: $0.2, tip: $0.3) }
     }
 
     private func date(_ hour: Int) -> Date {
