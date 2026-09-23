@@ -9,9 +9,13 @@ enum Theme {
     static let primary = Color(hex: 0x3f6b52)
     static let border = Color(hex: 0xdcd5c9)
 
-    /// The chart palette, straight from Practice Studio's tokens
-    /// (client/src/index.css, light mode). Eight of them, so an intermission
-    /// can be told apart from its neighbours.
+    /// The palette an intermission is coloured from.
+    ///
+    /// The first eight are Practice Studio's own chart tokens
+    /// (client/src/index.css, light mode). The rest are new, but written to
+    /// the same recipe - muted, mid-lightness, spread around the wheel - so
+    /// a list of sixteen still looks like one family rather than eight
+    /// tokens and eight strangers.
     static let palette: [(token: String, name: String, color: Color)] = [
         ("chart-1", "Green", Color(h: 145, s: 20, l: 42)),
         ("chart-2", "Terracotta", Color(h: 14, s: 45, l: 52)),
@@ -21,6 +25,14 @@ enum Theme {
         ("chart-6", "Violet", Color(h: 255, s: 30, l: 55)),
         ("chart-7", "Rose", Color(h: 340, s: 40, l: 55)),
         ("chart-8", "Amber", Color(h: 28, s: 70, l: 50)),
+        ("desk-1", "Teal", Color(h: 175, s: 30, l: 40)),
+        ("desk-2", "Sky", Color(h: 196, s: 42, l: 60)),
+        ("desk-3", "Indigo", Color(h: 232, s: 34, l: 52)),
+        ("desk-4", "Plum", Color(h: 286, s: 26, l: 45)),
+        ("desk-5", "Coral", Color(h: 6, s: 52, l: 62)),
+        ("desk-6", "Olive", Color(h: 74, s: 32, l: 40)),
+        ("desk-7", "Moss", Color(h: 112, s: 24, l: 46)),
+        ("desk-8", "Clay", Color(h: 22, s: 34, l: 46)),
     ]
 
     static func color(token: String) -> Color {

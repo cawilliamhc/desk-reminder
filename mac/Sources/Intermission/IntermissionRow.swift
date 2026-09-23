@@ -63,7 +63,7 @@ struct IntermissionRow: View {
     private var colorPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("\(kind.name) colour").font(Theme.ui(12, weight: .medium)).foregroundStyle(Theme.ink)
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(30), spacing: 6), count: 4), spacing: 6) {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(30), spacing: 6), count: 8), spacing: 6) {
                 ForEach(Theme.palette, id: \.token) { entry in
                     Button {
                         kind.colorToken = entry.token

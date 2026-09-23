@@ -104,6 +104,7 @@ final class AppModel {
         self.today = days[startOfDay]
         presence.idleThreshold = TimeInterval(settings.idleMinutes * 60)
 
+        recomputeRecentDays()
         notifier.requestAuthorization()
         if ProcessInfo.processInfo.environment["INTERMISSION_TEST_NOTIFY"] != nil {
             notifier.post("Test notification from Intermission.", sound: true)
@@ -190,7 +191,6 @@ final class AppModel {
         for _ in schedule.endings(after: lastCheck, until: now) {
             // Every session ends in a standing note, virtual included.
             let (message, outcome) = coach.sessionEnded(at: now, inSession: inSession)
-            days.update(now) { $0.notesTotal += 1 }
             if let outcome { record(outcome) } else if let message { say(message) }
         }
         lastCheck = now
@@ -214,6 +214,7 @@ final class AppModel {
         let startOfDay = Calendar.current.startOfDay(for: now)
         guard startOfDay != currentDay else { return }
         days.save()
+        recomputeRecentDays()      // settle yesterday before moving on
         currentDay = startOfDay
         coach.newDay()
         today = days[now]
@@ -244,6 +245,31 @@ final class AppModel {
     /// relaunch started from zero AND wrote those zeros over the saved day.
     /// The logs persist, so this is the same answer whatever the app has been
     /// doing.
+    /// Re-derives the last week's totals from the logs.
+    ///
+    /// A day's numbers used to be whatever the running tally happened to have
+    /// when it last saved, which is how yesterday ended up claiming zero
+    /// standing. The logs are the record; anything they cover is recomputed
+    /// from them. A day they don't cover is left alone rather than zeroed.
+    private func recomputeRecentDays() {
+        let calendar = Calendar.current
+        for back in 1...7 {
+            guard let day = calendar.date(byAdding: .day, value: -back, to: currentDay) else { continue }
+            let logged = heights.segments(on: day).isEmpty == false
+            guard logged else { continue }
+            let totals = deskTotals(
+                heights: heights, computer: computer,
+                sessions: schedule.sessions(on: day),
+                on: day, now: calendar.date(byAdding: .day, value: 1, to: day) ?? Date()
+            )
+            days.update(day) {
+                $0.standing = totals.standing
+                $0.sitting = totals.sitting
+            }
+        }
+        days.save()
+    }
+
     private func syncTodayFromTimeline() {
         let totals = deskTotals(
             heights: heights,
@@ -257,6 +283,9 @@ final class AppModel {
             $0.sitting = totals.sitting
             $0.inSession = inSessionToday
             $0.isDeskDay = settings.isDeskDay(currentDay)
+            // Every session that has ended is a note owed, whether or not the
+            // app was running when it ended.
+            $0.notesTotal = schedule.sessions(on: currentDay).count { $0.end <= now }
         }
         today = days[currentDay]
     }

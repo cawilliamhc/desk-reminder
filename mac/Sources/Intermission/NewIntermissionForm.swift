@@ -61,7 +61,7 @@ struct NewIntermissionForm: View {
                 Text("Leave it").tag(IntermissionKind.DeskRule.unchanged)
             }
 
-            HStack(spacing: 6) {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(22), spacing: 6), count: 8), spacing: 6) {
                 ForEach(Theme.palette, id: \.token) { entry in
                     Button { colorToken = entry.token } label: {
                         Circle()
