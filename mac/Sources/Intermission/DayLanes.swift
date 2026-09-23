@@ -182,6 +182,7 @@ struct DayLanes: View {
         guard let label = segment.label else { return .clear }   // away, unnamed: a gap
         // Named breaks take their intermission's colour, so the Computer lane
         // and the Planned lane agree about what lunch looks like.
+        if label == ComputerLog.sessionLabel { return Theme.session }
         guard let kind = model.settings.intermissions.first(where: { $0.name == label }) else {
             return Theme.primary
         }

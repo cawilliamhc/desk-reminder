@@ -24,6 +24,9 @@ public struct ComputerSegment: Codable, Equatable, Identifiable, Sendable {
 public struct ComputerLog: Codable, Equatable, Sendable {
     /// An unlabelled break longer than this is worth asking about.
     public static let promptAfter: TimeInterval = 20 * 60
+    /// Time away that was a session. Not a break, and never asked about:
+    /// if Carl was in session, the session is what he was doing.
+    public static let sessionLabel = "In session"
 
     public private(set) var segments: [ComputerSegment] = []
 
@@ -52,6 +55,27 @@ public struct ComputerLog: Codable, Equatable, Sendable {
         segments[index].label = label
     }
 
+    /// Names every unlabelled stretch away that overlaps a session, so the
+    /// hour with a client is never mistaken for a break to ask about. A label
+    /// Carl gave himself is left alone - he knows better than the overlap.
+    @discardableResult
+    public mutating func labelSessions(_ sessions: [PublishedSession]) -> Int {
+        var named = 0
+        for index in segments.indices {
+            let segment = segments[index]
+            guard !segment.isOnComputer, segment.label == nil else { continue }
+            let end = segment.end ?? Date()
+            let inSession = sessions.contains { session in
+                session.start < end && segment.start < session.end
+            }
+            if inSession {
+                segments[index].label = Self.sessionLabel
+                named += 1
+            }
+        }
+        return named
+    }
+
     /// Finished off stretches with no label, long enough to be worth asking
     /// about, newest first.
     public func unlabelledBreaks(longerThan minimum: TimeInterval = promptAfter) -> [ComputerSegment] {
@@ -73,11 +97,11 @@ public struct ComputerLog: Codable, Equatable, Sendable {
     }
 
     /// Seconds off the computer today that Carl named, by label. Unlabelled
-    /// time is deliberately left out: "off the computer" is meant to mean
-    /// lunch and reading, not the Mac idling while he's in session.
+    /// time is deliberately left out, and so is session time: "off the
+    /// computer" means lunch and reading, not the hour with a client.
     public func labelledBreaks(on day: Date, now: Date, calendar: Calendar = .current) -> [String: TimeInterval] {
         segments(on: day, now: now, calendar: calendar)
-            .filter { !$0.isOnComputer && $0.label != nil }
+            .filter { !$0.isOnComputer && $0.label != nil && $0.label != Self.sessionLabel }
             .reduce(into: [:]) { totals, segment in
                 totals[segment.label!, default: 0] += segment.duration(now: now)
             }

@@ -80,3 +80,47 @@ private func at(_ hour: Int, _ minute: Int = 0) -> Date {
     #expect(log.segments.count == 1)
     #expect(log.current?.start == at(10))
 }
+
+
+private func session(_ from: Int, _ fromMin: Int, to: Int, _ toMin: Int) -> PublishedSession {
+    PublishedSession(start: at(from, fromMin), end: at(to, toMin), mode: .inPerson)
+}
+
+@Test func timeAwayDuringASessionIsTheSessionNotABreak() {
+    var log = ComputerLog()
+    log.setOnComputer(true, at: at(9))
+    log.setOnComputer(false, at: at(13, 10))     // away for the 1:10
+    log.setOnComputer(true, at: at(14))
+
+    log.labelSessions([session(13, 10, to: 14, 0)])
+    #expect(log.unlabelledBreaks().isEmpty)                    // never asked about
+    #expect(log.labelledBreaks(on: at(9), now: at(15), calendar: calendar).isEmpty)  // not "off the computer"
+    #expect(log.segments.last { !$0.isOnComputer }?.label == ComputerLog.sessionLabel)
+}
+
+@Test func aBreakThatMerelyTouchesASessionCountsAsTheSession() {
+    var log = ComputerLog()
+    log.setOnComputer(true, at: at(9))
+    log.setOnComputer(false, at: at(12, 30))     // lunch running into the 1:00
+    log.setOnComputer(true, at: at(13, 30))
+    log.labelSessions([session(13, 0, to: 13, 50)])
+    #expect(log.unlabelledBreaks().isEmpty)
+}
+
+@Test func aLabelCarlGaveIsNeverOverwritten() {
+    var log = ComputerLog()
+    log.setOnComputer(true, at: at(9))
+    log.startBreak(label: "Lunch", at: at(12, 30))
+    log.setOnComputer(true, at: at(13, 20))
+    log.labelSessions([session(12, 30, to: 13, 20)])
+    #expect(log.labelledBreaks(on: at(9), now: at(14), calendar: calendar) == ["Lunch": 3000])
+}
+
+@Test func aBreakWellClearOfASessionIsStillAskedAbout() {
+    var log = ComputerLog()
+    log.setOnComputer(true, at: at(9))
+    log.setOnComputer(false, at: at(11))
+    log.setOnComputer(true, at: at(11, 40))
+    log.labelSessions([session(13, 0, to: 13, 50)])
+    #expect(log.unlabelledBreaks().count == 1)
+}
