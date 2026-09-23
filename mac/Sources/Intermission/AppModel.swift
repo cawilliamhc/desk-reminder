@@ -235,11 +235,24 @@ final class AppModel {
         logs.save(heights: heights, computer: computer)
     }
 
+    /// The day's totals, worked out from the logs each tick.
+    ///
+    /// They used to be counted up by a timeline living in memory, so every
+    /// relaunch started from zero AND wrote those zeros over the saved day.
+    /// The logs persist, so this is the same answer whatever the app has been
+    /// doing.
     private func syncTodayFromTimeline() {
-        let totals = timeline.totals(for: currentDay)
+        let totals = deskTotals(
+            heights: heights,
+            computer: computer,
+            sessions: schedule.sessions(on: currentDay),
+            on: currentDay,
+            now: now
+        )
         days.update(currentDay) {
             $0.standing = totals.standing
             $0.sitting = totals.sitting
+            $0.inSession = inSessionToday
             $0.isDeskDay = settings.isDeskDay(currentDay)
         }
         today = days[currentDay]
@@ -421,15 +434,18 @@ final class AppModel {
         }
     }
 
-    /// The next intermission on the plan that hasn't been started or skipped.
-    /// Reads the BLOCK, not the settings list, so a one-off counts too.
+    /// The next thing on the day, whatever it is: a session, a note window,
+    /// something from the calendar, a break. Open space isn't a thing, so it
+    /// doesn't count. "Up next" means next, not next break.
     var upNext: PlanBlock? {
         plan
             .sorted { $0.start < $1.start }
-            .first { block in
-                guard case .intermission(let id) = block.kind else { return false }
-                return block.end > now && !startedIntermissions.contains(id)
-            }
+            .first { $0.start > now && $0.kind != .open }
+    }
+
+    /// What's happening right now, if anything is.
+    var currentThing: PlanBlock? {
+        plan.first { $0.start <= now && now < $0.end && $0.kind != .open }
     }
 
     /// The definition behind a block, when there is one. A one-off has none.
