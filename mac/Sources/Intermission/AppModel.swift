@@ -598,12 +598,6 @@ final class AppModel {
 
     // MARK: - Actions the views call
 
-    func finishedSessionNow() {
-        let (message, outcome) = coach.sessionEnded(at: Date())
-        days.update(Date()) { $0.notesTotal += 1 }
-        if let outcome { record(outcome) } else if let message { say(message) }
-    }
-
     func pause(until: Date) {
         settings.pausedUntil = until
         coach.cancel()

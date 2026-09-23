@@ -25,9 +25,6 @@ struct SidebarView: View {
             }
             NowCard(model: model)
             deskCard
-            Button("I just finished a session") { model.finishedSessionNow() }
-                .controlSize(.small)
-                .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 14)

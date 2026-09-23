@@ -52,8 +52,6 @@ struct MenuBarView: View {
 
             Divider()
 
-            Button("I just finished a session") { model.finishedSessionNow() }
-                .keyboardShortcut(.return, modifiers: .command)
             if model.settings.pausedUntil == nil {
                 Button("Pause for 1 hour") { model.pause(until: Date().addingTimeInterval(3600)) }
                     .keyboardShortcut("p", modifiers: .command)

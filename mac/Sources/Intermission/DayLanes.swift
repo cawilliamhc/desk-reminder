@@ -70,7 +70,7 @@ struct DayLanes: View {
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 5).fill(Theme.background)
                     content(geometry.size.width)
-                    nowLine(width: geometry.size.width, dot: dot)
+                    nowLine(width: geometry.size.width, dot: dot).allowsHitTesting(false)
                 }
             }
             .frame(height: height)
@@ -88,14 +88,18 @@ struct DayLanes: View {
             )
             .brightness(hovered == tip ? -0.06 : 0)
             .frame(width: w)
-            .offset(x: x)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Hover and tooltip belong to the BAR, before it's put in a
+            // full-width frame to position it. Attached after, every bar's
+            // invisible full-width frame sat over its neighbours and swallowed
+            // their hovers - so only the last one in a lane ever answered.
+            .contentShape(RoundedRectangle(cornerRadius: 2))
             .onHover { hovering in
-                // The label at the top of the lanes says what it is; the
-                // tooltip is there for a bar too narrow to hover comfortably.
                 hovered = hovering ? tip : (hovered == tip ? nil : hovered)
             }
             .help(tip)
+            .offset(x: x)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .allowsHitTesting(w > 1)
     }
 
     /// Where we are in the day. Red, with a dot at its head on the top lane,
