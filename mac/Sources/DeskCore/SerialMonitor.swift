@@ -13,11 +13,21 @@ public final class SerialMonitor: @unchecked Sendable {
         case adapterNotFound
         case disconnected
 
+        /// For the sidebar: whether it's working, not which device it is.
         public var label: String {
             switch self {
-            case .connected(let port): "connected (\(port))"
-            case .adapterNotFound: "adapter not found"
-            case .disconnected: "adapter disconnected"
+            case .connected: "connected"
+            case .adapterNotFound: "no adapter"
+            case .disconnected: "adapter unplugged"
+            }
+        }
+
+        /// For Settings, where the port name is the point.
+        public var detail: String {
+            switch self {
+            case .connected(let port): "FT232R on \(port) · connected"
+            case .adapterNotFound: "No adapter found"
+            case .disconnected: "Adapter unplugged"
             }
         }
     }

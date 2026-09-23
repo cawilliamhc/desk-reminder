@@ -71,12 +71,14 @@ struct SidebarView: View {
     }
 
     private var deskSubtitle: String {
-        let state = switch (model.isStanding, model.heightIsAssumed) {
-        case (nil, _): "No reading yet"
-        case (true?, false): "Standing"
-        case (false?, false): "Sitting"
-        default: "Last known"      // assumed: the desk hasn't moved since launch
+        let state = switch model.isStanding {
+        case nil: "No reading yet"
+        case true?: "Standing"
+        case false?: "Sitting"
         }
-        return "\(state) · \(model.adapterStatus.label)"
+        // "Last known" belongs to the height, not to a separate state: the
+        // desk is still up or down, we just haven't seen it move.
+        let unconfirmed = model.heightIsAssumed && model.isStanding != nil ? ", last known" : ""
+        return "\(state)\(unconfirmed) · \(model.adapterStatus.label)"
     }
 }

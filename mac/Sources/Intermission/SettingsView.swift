@@ -193,7 +193,7 @@ struct SettingsView: View {
     private func fmt(_ value: Double) -> String { String(format: "%.1f", value) }
 
     private var adapterDetail: String {
-        var detail = model.adapterStatus.label
+        var detail = model.adapterStatus.detail
         if let last = model.lastReport {
             detail += " · last report \(Int(Date().timeIntervalSince(last)))s ago"
         }

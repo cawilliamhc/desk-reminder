@@ -106,13 +106,19 @@ struct NowCard: View {
     private var deskLine: (symbol: String, text: String)? {
         guard let rule = model.phase.deskRule else { return nil }
         let height = model.height.map { String(format: "%.1f″", $0) } ?? "—"
+        // An assumed height is still a height: the desk hasn't moved since
+        // the app started, so 44.5" means the desk is up. Telling him to
+        // raise a desk that is already up is the one thing this must not do.
+        let unconfirmed = model.heightIsAssumed ? " (last known)" : ""
         switch rule {
         case .up:
-            let there = model.isStanding == true && !model.heightIsAssumed
-            return ("arrow.up", there ? "Desk up · \(height) ✓" : "Raise the desk — \(height) now")
+            return model.isStanding == true
+                ? ("arrow.up", "Desk up · \(height)\(unconfirmed)")
+                : ("arrow.up", "Raise the desk — \(height) now")
         case .down:
-            let down = model.isStanding == false
-            return ("arrow.down", down ? "Desk down · \(height)" : "Bring the desk down for this one")
+            return model.isStanding == false
+                ? ("arrow.down", "Desk down · \(height)\(unconfirmed)")
+                : ("arrow.down", "Bring the desk down for this one")
         case .unchanged:
             return ("equal", "Desk stays where it is")
         case .any:
