@@ -27,6 +27,10 @@ public struct ComputerLog: Codable, Equatable, Sendable {
     /// Time away that was a session. Not a break, and never asked about:
     /// if Carl was in session, the session is what he was doing.
     public static let sessionLabel = "In session"
+    /// "Neither" - he was away, it wasn't an intermission, and the question
+    /// is settled. Without this the prompt found the same stretch again on
+    /// the next tick and asked again, forever.
+    public static let declinedLabel = "Not a break"
 
     public private(set) var segments: [ComputerSegment] = []
 
@@ -53,6 +57,11 @@ public struct ComputerLog: Codable, Equatable, Sendable {
         guard let index = segments.firstIndex(where: { $0.start == start }), !segments[index].isOnComputer
         else { return }
         segments[index].label = label
+    }
+
+    /// "Neither": remember that it was asked and answered.
+    public mutating func decline(segmentStartingAt start: Date) {
+        label(segmentStartingAt: start, as: Self.declinedLabel)
     }
 
     /// A stretch this much inside a session was the session, whatever it
@@ -118,7 +127,8 @@ public struct ComputerLog: Codable, Equatable, Sendable {
     /// computer" means lunch and reading, not the hour with a client.
     public func labelledBreaks(on day: Date, now: Date, calendar: Calendar = .current) -> [String: TimeInterval] {
         segments(on: day, now: now, calendar: calendar)
-            .filter { !$0.isOnComputer && $0.label != nil && $0.label != Self.sessionLabel }
+            .filter { !$0.isOnComputer && $0.label != nil }
+            .filter { $0.label != Self.sessionLabel && $0.label != Self.declinedLabel }
             .reduce(into: [:]) { totals, segment in
                 totals[segment.label!, default: 0] += segment.duration(now: now)
             }

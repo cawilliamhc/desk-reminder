@@ -138,3 +138,16 @@ private func session(_ from: Int, _ fromMin: Int, to: Int, _ toMin: Int) -> Publ
     log.labelSessions([session(13, 0, to: 13, 50)])
     #expect(log.unlabelledBreaks().count == 1)
 }
+
+
+@Test func neitherSettlesTheQuestionForGood() {
+    var log = ComputerLog()
+    log.setOnComputer(true, at: at(9))
+    log.setOnComputer(false, at: at(11))
+    log.setOnComputer(true, at: at(11, 40))
+    #expect(log.unlabelledBreaks().count == 1)
+
+    log.decline(segmentStartingAt: at(11))
+    #expect(log.unlabelledBreaks().isEmpty)                                          // never asked again
+    #expect(log.labelledBreaks(on: at(9), now: at(12), calendar: calendar).isEmpty)  // and not time off
+}

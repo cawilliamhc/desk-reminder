@@ -562,9 +562,15 @@ final class AppModel {
     func labelBreak(_ segment: ComputerSegment, as label: String) {
         computer.label(segmentStartingAt: segment.start, as: label)
         breakToLabel = nil
+        logs.save(heights: heights, computer: computer)
     }
 
-    func dismissBreakPrompt() { breakToLabel = nil }
+    /// "Neither". Recorded, so the prompt doesn't ask about it again.
+    func dismissBreakPrompt() {
+        if let breakToLabel { computer.decline(segmentStartingAt: breakToLabel.start) }
+        breakToLabel = nil
+        logs.save(heights: heights, computer: computer)
+    }
 
     /// Off-the-computer time today, by what it was.
     var breaksToday: [String: TimeInterval] {
