@@ -41,8 +41,8 @@ final class AppModel {
     private(set) var timeline: DeskTimeline
     private(set) var today: DayRecord
     private(set) var isPresent = false
-    private(set) var computer = ComputerLog()
-    private(set) var heights = HeightLog()
+    private(set) var computer: ComputerLog
+    private(set) var heights: HeightLog
     private(set) var plan: [PlanBlock] = []
     /// The day the Plan view is showing. In the evening it opens on tomorrow.
     var planDay: PlanDay = .today { didSet { rebuildPlan() } }
@@ -68,12 +68,14 @@ final class AppModel {
     private var coach: Coach
     private var days: DayStore
     private var plans: PlanStore
+    private let logs: LogStore
     private var schedule: SessionSchedule
     private let settingsStore: SettingsStore
     private let presence = Presence()
     private let notifier = Notifier()
     private var monitor: SerialMonitor?
     private var lastCheck = Date()
+    private var lastSaved = Date.distantPast
     private var snoozedUntil: Date?
     private var currentDay: Date
 
@@ -85,6 +87,10 @@ final class AppModel {
         self.coach = Coach(settings: settings)
         self.days = DayStore(url: Self.supportDirectory.appending(path: "days.json"))
         self.plans = PlanStore(url: Self.supportDirectory.appending(path: "plans.json"))
+        self.logs = LogStore(url: Self.supportDirectory.appending(path: "logs.json"))
+        let saved = logs.load()
+        self.heights = saved.heights
+        self.computer = saved.computer
         self.schedule = SessionSchedule(url: Self.sessionsFile)
         self.timeline = DeskTimeline(
             standingThreshold: settings.standingThreshold,
@@ -157,8 +163,15 @@ final class AppModel {
             isPresent = present
             timeline.setPresent(present, at: now)
         }
+        // The log only hears about the desk when it moves, so a day that
+        // starts with the desk already up had nothing in it until the first
+        // move. The remembered height opens the first stretch instead.
+        if heights.current == nil, let standing = isStanding {
+            heights.record(standing: standing, at: now)
+        }
         timeline.tick(now)
         syncTodayFromTimeline()
+        saveIfDue(now)
         computer.setOnComputer(present, at: now)
         if settings.askWhatABreakWas, breakToLabel == nil, present {
             breakToLabel = computer.unlabelledBreaks().first
@@ -207,8 +220,19 @@ final class AppModel {
         planDay = .today
         computer.prune(before: startOfDay.addingTimeInterval(-7 * 86_400))
         heights.prune(before: startOfDay.addingTimeInterval(-7 * 86_400))
+        logs.save(heights: heights, computer: computer)
         rebuildPlan()
         if settings.morningPlan && settings.isDeskDay(now) { selectedView = .plan }
+    }
+
+    /// Totals are written once a minute. They used to reach disk only when a
+    /// note was recorded or the day rolled over, so every restart threw away
+    /// the standing time since - which is why the numbers read zero.
+    private func saveIfDue(_ now: Date) {
+        guard now.timeIntervalSince(lastSaved) >= 60 else { return }
+        lastSaved = now
+        days.save()
+        logs.save(heights: heights, computer: computer)
     }
 
     private func syncTodayFromTimeline() {
@@ -398,15 +422,24 @@ final class AppModel {
     }
 
     /// The next intermission on the plan that hasn't been started or skipped.
-    var upNext: (kind: IntermissionKind, at: Date)? {
-        for block in plan.sorted(by: { $0.start < $1.start }) {
-            guard case .intermission(let id) = block.kind,
-                  block.end > now,
-                  !startedIntermissions.contains(id),
-                  let kind = settings.intermissions.first(where: { $0.id == id })
-            else { continue }
-            return (kind, block.start)
-        }
+    /// Reads the BLOCK, not the settings list, so a one-off counts too.
+    var upNext: PlanBlock? {
+        plan
+            .sorted { $0.start < $1.start }
+            .first { block in
+                guard case .intermission(let id) = block.kind else { return false }
+                return block.end > now && !startedIntermissions.contains(id)
+            }
+    }
+
+    /// The definition behind a block, when there is one. A one-off has none.
+    func kind(of block: PlanBlock) -> IntermissionKind? {
+        guard case .intermission(let id) = block.kind else { return nil }
+        return settings.intermissions.first { $0.id == id }
+    }
+
+    func intermissionID(of block: PlanBlock) -> String? {
+        if case .intermission(let id) = block.kind { return id }
         return nil
     }
 
@@ -430,12 +463,11 @@ final class AppModel {
             guard case .intermission(let id) = block.kind,
                   block.start <= now, now < block.end,
                   !announcedIntermissions.contains(id),
-                  !startedIntermissions.contains(id),
-                  let kind = settings.intermissions.first(where: { $0.id == id })
+                  !startedIntermissions.contains(id)
             else { continue }
             announcedIntermissions.insert(id)
             say(.intermissionDue(
-                name: kind.name,
+                name: block.title,
                 minutes: Int(block.length / 60),
                 shortened: block.isShortened
             ))

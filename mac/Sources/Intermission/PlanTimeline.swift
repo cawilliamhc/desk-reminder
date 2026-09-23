@@ -42,10 +42,17 @@ struct PlanTimeline: View {
 
     // MARK: - Geometry
 
+    /// The hours the timeline covers. On today it always includes now, even
+    /// before the day's first block - otherwise the red line has nowhere to
+    /// be, which is why it kept not showing up first thing in the morning.
     private var window: DateInterval {
         guard let first = model.shownPlan.first?.start, let last = model.shownPlan.last?.end, last > first
         else { return DateInterval(start: model.shownDate, duration: 3600) }
-        return DateInterval(start: first, end: last)
+        guard model.planDay == .today else { return DateInterval(start: first, end: last) }
+        return DateInterval(
+            start: min(first, model.now.addingTimeInterval(-15 * 60)),
+            end: max(last, model.now.addingTimeInterval(15 * 60))
+        )
     }
 
     private var totalHeight: CGFloat { CGFloat(window.duration / 60) * Self.pointsPerMinute }

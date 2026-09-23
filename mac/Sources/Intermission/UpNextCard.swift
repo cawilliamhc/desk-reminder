@@ -8,28 +8,28 @@ struct UpNextCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let next = model.upNext {
-                Text("Up next · \(next.at.formatted(date: .omitted, time: .shortened))")
+            if let next = model.upNext, let id = model.intermissionID(of: next) {
+                Text("Up next · \(next.start.formatted(date: .omitted, time: .shortened))")
                     .font(Theme.ui(11)).foregroundStyle(Theme.muted)
-                Text("\(next.kind.name), \(next.kind.minutes) minutes")
+                Text("\(next.title), \(Int(next.length / 60)) minutes")
                     .font(Theme.headline(20)).foregroundStyle(Theme.ink)
-                Text(helper(next.kind))
+                Text(helper(model.kind(of: next)?.deskRule ?? .any))
                     .font(Theme.ui(11)).foregroundStyle(Theme.muted)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
-                    Button("I'm off — \(next.kind.name.lowercased())") {
-                        model.startIntermission(next.kind.id)
+                    Button("I'm off — \(next.title.lowercased())") {
+                        model.startIntermission(id)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     Menu("Swap") {
-                        ForEach(model.swapCandidates.filter { $0.id != next.kind.id }, id: \.id) { kind in
-                            Button(kind.name) { model.apply(.swapped(for: kind.id), to: next.kind.id) }
+                        ForEach(model.swapCandidates.filter { $0.id != id }, id: \.id) { kind in
+                            Button(kind.name) { model.apply(.swapped(for: kind.id), to: id) }
                         }
                     }
                     .menuStyle(.borderlessButton)
                     .frame(width: 58)
-                    Button("Skip") { model.apply(.skipped, to: next.kind.id) }
+                    Button(model.isOneOff(id) ? "Remove" : "Skip") { model.removeFromPlan(id) }
                         .buttonStyle(.borderless)
                 }
                 .font(Theme.ui(11))
@@ -51,8 +51,8 @@ struct UpNextCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    private func helper(_ kind: IntermissionKind) -> String {
-        switch kind.deskRule {
+    private func helper(_ rule: IntermissionKind.DeskRule) -> String {
+        switch rule {
         case .down: "The desk can come down for this one. Locking the Mac starts it."
         case .up: "On your feet for this one."
         case .unchanged: "Desk stays where it is."
