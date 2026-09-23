@@ -55,20 +55,37 @@ public struct ComputerLog: Codable, Equatable, Sendable {
         segments[index].label = label
     }
 
-    /// Names every unlabelled stretch away that overlaps a session, so the
-    /// hour with a client is never mistaken for a break to ask about. A label
-    /// Carl gave himself is left alone - he knows better than the overlap.
+    /// A stretch this much inside a session was the session, whatever it
+    /// was called. Below it, an overlap is just a break running long.
+    public static let mostlyInSession = 0.8
+
+    /// Names stretches away that were sessions.
+    ///
+    /// Unlabelled ones need only touch a session: the hour with a client is
+    /// never something to ask Carl about. A stretch he named himself is left
+    /// alone unless it sits almost entirely inside a session - a lunch that
+    /// ran into the hour is still lunch, but a "lunch" from 1:03 to 1:52 on
+    /// top of a 1:00 session is the session, and only became a lunch because
+    /// the app asked a question it shouldn't have.
     @discardableResult
-    public mutating func labelSessions(_ sessions: [PublishedSession]) -> Int {
+    public mutating func labelSessions(_ sessions: [PublishedSession], now: Date = Date()) -> Int {
         var named = 0
         for index in segments.indices {
             let segment = segments[index]
-            guard !segment.isOnComputer, segment.label == nil else { continue }
-            let end = segment.end ?? Date()
-            let inSession = sessions.contains { session in
-                session.start < end && segment.start < session.end
+            guard !segment.isOnComputer, segment.label != Self.sessionLabel else { continue }
+            let end = segment.end ?? now
+            let length = end.timeIntervalSince(segment.start)
+            guard length > 0 else { continue }
+
+            let inSession = sessions.reduce(0.0) { covered, session in
+                let from = max(segment.start, session.start)
+                let to = min(end, session.end)
+                return covered + max(0, to.timeIntervalSince(from))
             }
-            if inSession {
+            guard inSession > 0 else { continue }
+
+            let claimed = segment.label == nil || inSession / length >= Self.mostlyInSession
+            if claimed {
                 segments[index].label = Self.sessionLabel
                 named += 1
             }

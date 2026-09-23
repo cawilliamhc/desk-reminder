@@ -107,13 +107,27 @@ private func session(_ from: Int, _ fromMin: Int, to: Int, _ toMin: Int) -> Publ
     #expect(log.unlabelledBreaks().isEmpty)
 }
 
-@Test func aLabelCarlGaveIsNeverOverwritten() {
+@Test func aBreakThatRanIntoTheHourKeepsItsName() {
+    // Lunch from 12:30, the 1:00 starts while he's still out: half of it was
+    // lunch, so lunch it stays.
     var log = ComputerLog()
     log.setOnComputer(true, at: at(9))
     log.startBreak(label: "Lunch", at: at(12, 30))
-    log.setOnComputer(true, at: at(13, 20))
-    log.labelSessions([session(12, 30, to: 13, 20)])
-    #expect(log.labelledBreaks(on: at(9), now: at(14), calendar: calendar) == ["Lunch": 3000])
+    log.setOnComputer(true, at: at(13, 30))
+    log.labelSessions([session(13, 0, to: 13, 50)])
+    #expect(log.labelledBreaks(on: at(9), now: at(14), calendar: calendar) == ["Lunch": 3600])
+}
+
+@Test func aMislabelledSessionIsPutRight() {
+    // Carl's actual data: the app asked what a 1:03-1:52 absence was, he
+    // said lunch, and it was the 1:00 session almost exactly.
+    var log = ComputerLog()
+    log.setOnComputer(true, at: at(9))
+    log.startBreak(label: "Lunch", at: at(13, 3))
+    log.setOnComputer(true, at: at(13, 52))
+    log.labelSessions([session(13, 0, to: 13, 50)])
+    #expect(log.labelledBreaks(on: at(9), now: at(14), calendar: calendar).isEmpty)
+    #expect(log.segments.last { !$0.isOnComputer }?.label == ComputerLog.sessionLabel)
 }
 
 @Test func aBreakWellClearOfASessionIsStillAskedAbout() {

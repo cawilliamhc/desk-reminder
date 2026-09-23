@@ -175,7 +175,7 @@ final class AppModel {
         computer.setOnComputer(present, at: now)
         // Away during a session? That was the session. Named before the
         // prompt looks, so it never asks about a client's hour.
-        computer.labelSessions(schedule.sessions(on: currentDay))
+        computer.labelSessions(schedule.sessions(on: currentDay), now: now)
         if settings.askWhatABreakWas, breakToLabel == nil, present {
             breakToLabel = computer.unlabelledBreaks().first
         }
