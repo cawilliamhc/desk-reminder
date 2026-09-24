@@ -396,7 +396,8 @@ final class AppModel {
         plan = blocks(for: Date())
         events = calendarEvents(on: Date())
 
-        unplacedToday = schedule.isDayOff(Date()) ? [] : planner().unplaced(in: plan, on: Date())
+        // Nothing is "unplaced" on a day the planner wasn't placing into.
+        unplacedToday = isDeskDay(Date()) ? planner().unplaced(in: plan, on: Date()) : []
 
         let shown = shownDate
         shownPlan = planDay == .today ? plan : blocks(for: shown)
@@ -428,22 +429,72 @@ final class AppModel {
     func blocks(for day: Date) -> [PlanBlock] {
         let key = Calendar.current.startOfDay(for: day)
         if let cached = planCache[key] { return cached }
-        // A day off is a day off: no plan, nothing to nudge about. A day
-        // that isn't a desk day counts as one - unless a session turned up
-        // on it, in which case he's working whatever the setting says.
-        let works = !schedule.isDayOff(day)
-            && (settings.isDeskDay(day) || !schedule.sessions(on: day).isEmpty)
-        let blocks = !works ? [] : planner().plan(
+        // Every day gets laid out, including the ones he doesn't work: he's
+        // often at the desk on a Thursday, and a blank Plan with no hours,
+        // no red line and nowhere to add anything is no use to him. What a
+        // rest day doesn't get is breaks placed into it.
+        // And not into a day that's already been: what a past Tuesday shows
+        // is what happened on it, not what this morning's rules would have
+        // suggested for it.
+        let today = Calendar.current.startOfDay(for: now)
+        let placeBreaks = !schedule.isDayOff(day) && settings.isDeskDay(day)
+            && Calendar.current.startOfDay(for: day) >= today
+        let blocks = planner().plan(
             sessions: schedule.sessions,
             events: calendarEvents(on: day),
             on: day,
             edits: plans[day].edits,
             goalSlots: weeks[day].slots(on: day),
+            placeBreaks: placeBreaks,
             configuredHours: schedule.workingHours(on: day),
             workingWindows: schedule.workingWindows(on: day)
         )
         planCache[key] = blocks
         return blocks
+    }
+
+    /// A day as the Week grid draws it: the plan, plus the breaks the log
+    /// says actually happened.
+    ///
+    /// A past day has nothing placed into it, so without this a Monday shows
+    /// its sessions and an empty afternoon - when the log knows perfectly
+    /// well that lunch was at 12:41.
+    func weekBlocks(on day: Date) -> [PlanBlock] {
+        let planned = blocks(for: day)
+        guard Calendar.current.startOfDay(for: day) < Calendar.current.startOfDay(for: now) else {
+            return planned
+        }
+        let placed = Set(planned.compactMap(\.intermissionID))
+        return planned + recordedBreaks(on: day).filter { block in
+            block.intermissionID.map { !placed.contains($0) } ?? true
+        }
+    }
+
+    /// Time away from the computer that Carl named, as blocks.
+    func recordedBreaks(on day: Date) -> [PlanBlock] {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: day)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+        return computer.segments.compactMap { segment -> PlanBlock? in
+            guard !segment.isOnComputer, let label = segment.label,
+                  label != ComputerLog.sessionLabel,
+                  label != ComputerLog.declinedLabel,
+                  label != ComputerLog.dayEndLabel
+            else { return nil }
+            let start = max(segment.start, dayStart)
+            let end = min(segment.end ?? now, dayEnd)
+            guard end > start, start < dayEnd, end > dayStart else { return nil }
+            let kind = settings.intermissions.first { $0.name.caseInsensitiveCompare(label) == .orderedSame }
+            return PlanBlock(
+                kind: .intermission(id: kind?.id ?? "logged-\(label.lowercased())"),
+                start: start, end: end,
+                title: label,
+                subline: "Recorded",
+                badge: "Happened",
+                isMine: true,
+                isGoal: kind?.isGoal ?? false
+            )
+        }
     }
 
     /// A day's calendar events, read once per rebuild.
@@ -688,8 +739,7 @@ final class AppModel {
     /// The first open stretch on a day that a goal would fit into, buffers
     /// and working hours included. Nil when the day has no room for it.
     func goalFit(_ goal: IntermissionKind, on day: Date) -> Date? {
-        guard !schedule.isDayOff(day), settings.isDeskDay(day) || !schedule.sessions(on: day).isEmpty
-        else { return nil }
+        guard isWorkingDay(day) else { return nil }
         let blocks = blocks(for: day)
         return planner()
             .openStretches(
@@ -697,13 +747,23 @@ final class AppModel {
                 window: planWindow(for: day),
                 workingWindows: schedule.workingWindows(on: day)
             )
-            .first { $0.duration >= goal.length && $0.end > now }?
-            .start
+            .compactMap { start(for: goal, in: $0) }
+            .first
+    }
+
+    /// Where a goal would go in an empty stretch, if it would.
+    func start(for goal: IntermissionKind, in stretch: DateInterval) -> Date? {
+        placeableStart(length: goal.length, in: stretch, now: now)
     }
 
     func placeGoal(_ id: String, on day: Date, at start: Date? = nil) {
         var week = weeks[day]
         week.place(id, on: day, at: start)
+        if let start, start < now {
+            week.mark(id, on: day, done: true)
+        } else if Calendar.current.startOfDay(for: day) < Calendar.current.startOfDay(for: now) {
+            week.mark(id, on: day, done: true)
+        }
         weeks[day] = week
         weeks.save()
         selectedGoalID = nil
@@ -790,27 +850,34 @@ final class AppModel {
 
     // MARK: - The week
 
-    /// The days the Week grid shows: his desk days, plus any day that has
-    /// sessions on it after all. A Thursday with a client on it is part of
-    /// the week whether or not it was meant to be.
+    /// The days the Week grid shows: Monday to Friday, always, plus a
+    /// weekend day if something is on it.
+    ///
+    /// It used to show only his desk days, which meant Thursday - the day he
+    /// most often ends up at the desk anyway - simply wasn't in the week.
     var weekDays: [Date] {
         let calendar = Calendar.current
         let start = WeekPlan.weekStart(of: now)
         return (0..<7).compactMap { offset -> Date? in
             guard let day = calendar.date(byAdding: .day, value: offset, to: start) else { return nil }
-            guard settings.isDeskDay(day) || !schedule.sessions(on: day).isEmpty else { return nil }
-            return day
+            guard offset > 4 else { return day }
+            let weekend = !schedule.sessions(on: day).isEmpty
+                || !weeks[day].slots(on: day).isEmpty
+                || settings.isDeskDay(day)
+            return weekend ? day : nil
         }
     }
 
-    /// True when the day is one he meant to work: it takes goals and counts
-    /// towards the week's standing average. A session on a day off shows,
-    /// but it isn't a day to plan into.
-    func isWorkingDay(_ day: Date) -> Bool {
-        settings.isDeskDay(day) && !schedule.isDayOff(day)
-    }
+    /// A day things can be put on. Time off and holidays are out; a day he
+    /// doesn't usually work isn't - that's where "I did read on Thursday"
+    /// goes.
+    func isWorkingDay(_ day: Date) -> Bool { !schedule.isDayOff(day) }
 
-    func isRestDay(_ day: Date) -> Bool { !isWorkingDay(day) }
+    /// Drawn hatched: time off and holidays, which Practice Studio publishes.
+    func isRestDay(_ day: Date) -> Bool { schedule.isDayOff(day) }
+
+    /// A day the planner will place breaks into by itself.
+    func isDeskDay(_ day: Date) -> Bool { settings.isDeskDay(day) && !schedule.isDayOff(day) }
 
     /// The hours the grid's rows cover: the widest working day of the week,
     /// so every column lines up on the same clock.
@@ -841,9 +908,10 @@ final class AppModel {
         return record.standingShare
     }
 
-    /// The week's standing, averaged across the desk days that have a number.
+    /// The week's standing, averaged across the days that have a number.
+    /// A day with nothing recorded isn't a nought, it's a day with no answer.
     var weekStandingShare: Double? {
-        let shares = weekDays.filter { isWorkingDay($0) }.compactMap { standingShare(on: $0) }
+        let shares = weekDays.filter { !isRestDay($0) }.compactMap { standingShare(on: $0) }
         guard !shares.isEmpty else { return nil }
         return shares.reduce(0, +) / Double(shares.count)
     }
@@ -904,6 +972,27 @@ final class AppModel {
         default:
             break
         }
+    }
+
+    /// "I did have lunch on Monday": puts a break on a day at a time, after
+    /// the fact. It goes in as an edit, so the planner leaves it alone and a
+    /// past day can hold something nobody planned.
+    func recordBreak(_ id: String, on day: Date, at start: Date, minutes: Int? = nil) {
+        var saved = plans[day]
+        saved.apply(PlanEdit(intermissionID: id, change: .moved(to: start)))
+        if let minutes { saved.apply(PlanEdit(intermissionID: id, change: .resized(minutes: minutes))) }
+        plans[day] = saved
+        plans.save()
+        rebuildPlan()
+    }
+
+    /// Takes something off a particular day, wherever that day is.
+    func clearEdits(for target: PlanEdit.Target, on day: Date) {
+        var saved = plans[day]
+        saved.clearEdits(for: target)
+        plans[day] = saved
+        plans.save()
+        rebuildPlan()
     }
 
     func clearEdits(for target: PlanEdit.Target) {

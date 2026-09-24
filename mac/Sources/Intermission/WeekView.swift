@@ -5,32 +5,47 @@ import SwiftUI
 ///
 /// Weekly goals are never placed for Carl, so somewhere has to exist for him
 /// to place them - and a week is the only scale at which "three times a week"
-/// is a thing you can see. Drag a goal onto an open slot, or drag a placed
-/// one back to the tray.
+/// is a thing you can see. Drag a goal onto a slot, or click it. A slot in
+/// the past is how something he did but never planned gets on the record.
 struct WeekView: View {
     @Bindable var model: AppModel
 
-    /// A minute of the day, in points. Shorter than Plan's: a whole week has
-    /// to fit at once or the grid stops being a grid.
-    private let pointsPerMinute: CGFloat = 0.62
-    private let gutter: CGFloat = 26
+    /// The block the pointer is over, described in one line under the
+    /// headline. At this scale a block is a stripe; the readout is what
+    /// makes it legible.
+    @State private var hovered: String?
+    private let gutter: CGFloat = 34
+    private let headerHeight: CGFloat = 34
+    /// Below this a column stops being readable, so the grid scrolls instead.
+    private let leastPointsPerMinute: CGFloat = 0.55
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(kicker).font(Theme.ui(12)).foregroundStyle(Theme.muted)
                 Text(headline)
                     .font(Theme.headline(22))
                     .foregroundStyle(Theme.ink)
                     .lineSpacing(2)
+                Text(hovered ?? hint)
+                    .font(Theme.ui(12))
+                    .foregroundStyle(hovered == nil ? Theme.muted : Theme.ink)
+                    .monospacedDigit()
+                    .lineLimit(1)
             }
 
             HStack(alignment: .top, spacing: 16) {
                 tray
-                // Scrolls rather than overflowing: a long day on a short
-                // window is a grid you can move, not a grid that spills.
-                ScrollView(.vertical) {
-                    grid.padding(.bottom, 8)
+                // The grid divides the day into the height it's given, so a
+                // taller window is a taller week rather than the same small
+                // one with space underneath it.
+                GeometryReader { geometry in
+                    let fitted = (geometry.size.height - headerHeight - 8) / CGFloat(hours.duration / 60)
+                    let scale = max(leastPointsPerMinute, fitted)
+                    ScrollView(.vertical) {
+                        grid(pointsPerMinute: scale)
+                    }
+                    .scrollDisabled(fitted >= leastPointsPerMinute)
                 }
             }
             .frame(maxHeight: .infinity, alignment: .top)
@@ -43,7 +58,7 @@ struct WeekView: View {
 
     private var kicker: String {
         let start = WeekPlan.weekStart(of: model.now)
-        let days = model.weekDays.count { model.isWorkingDay($0) }
+        let days = model.weekDays.count { model.isDeskDay($0) }
         return "Week of \(start.formatted(.dateTime.month(.wide).day())) · \(spell(days)) desk days"
     }
 
@@ -54,11 +69,10 @@ struct WeekView: View {
             let progress = model.goalProgress(goal.id)
             return "\(goal.name.lowercased()) \(progress.done + progress.planned) of \(progress.target)"
         }
-        let sentence = parts.joined(separator: ", ").prefix(1).uppercased() + parts.joined(separator: ", ").dropFirst()
+        let joined = parts.joined(separator: ", ")
         let left = model.goalSlotsLeft
-        return sentence + ". " + (left == 0
-            ? "Every goal has a slot."
-            : "\(spell(left).capitalized) still without a slot.")
+        return joined.prefix(1).uppercased() + joined.dropFirst() + ". "
+            + (left == 0 ? "Every goal has a slot." : "\(spell(left).capitalized) still without a slot.")
     }
 
     // MARK: - Tray
@@ -69,8 +83,6 @@ struct WeekView: View {
             ForEach(model.goals) { goal in
                 trayCard(goal)
             }
-            Text(hint).font(Theme.ui(11)).foregroundStyle(Theme.muted)
-                .fixedSize(horizontal: false, vertical: true)
 
             Spacer(minLength: 12)
 
@@ -81,7 +93,7 @@ struct WeekView: View {
                     .font(Theme.headline(26))
                     .monospacedDigit()
                     .foregroundStyle(Theme.ink)
-                Text("avg of desk days · goal \(Int((model.weeklyStandingGoal * 100).rounded()))%")
+                Text("avg of days recorded · goal \(Int((model.weeklyStandingGoal * 100).rounded()))%")
                     .font(Theme.ui(11)).foregroundStyle(Theme.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -93,8 +105,8 @@ struct WeekView: View {
     private var hint: String {
         guard let id = model.selectedGoalID,
               let goal = model.goals.first(where: { $0.id == id })
-        else { return "Pick a goal, then an open slot. Click a planned goal to take it off." }
-        return "Now click an open slot. Only slots that fit \(goal.minutes) min (plus the buffer) light up."
+        else { return "Pick a goal, then a slot. Hover a block to see what it is." }
+        return "Now click a slot that fits \(goal.minutes) min. One in the past counts as done."
     }
 
     private func trayCard(_ goal: IntermissionKind) -> some View {
@@ -137,26 +149,44 @@ struct WeekView: View {
 
     private var hours: DateInterval { model.weekHours }
 
-    private var grid: some View {
-        HStack(alignment: .top, spacing: 6) {
-            hourGutter
+    private func grid(pointsPerMinute scale: CGFloat) -> some View {
+        let height = CGFloat(hours.duration / 60) * scale
+        return HStack(alignment: .top, spacing: 6) {
+            hourGutter(scale: scale, height: height)
             ForEach(model.weekDays, id: \.self) { day in
-                dayColumn(day)
+                dayColumn(day, scale: scale, height: height)
             }
+        }
+        // The hour lines run behind every column, so the eye can carry a
+        // time across the week without counting blocks.
+        .background(alignment: .top) {
+            VStack(spacing: 0) {
+                Spacer().frame(height: headerHeight)
+                ZStack(alignment: .topLeading) {
+                    ForEach(hourMarks, id: \.self) { mark in
+                        Rectangle()
+                            .fill(Theme.border.opacity(0.6))
+                            .frame(height: 1)
+                            .offset(y: y(mark, scale: scale))
+                    }
+                }
+                .frame(height: height, alignment: .top)
+            }
+            .padding(.leading, gutter)
         }
     }
 
-    private var hourGutter: some View {
+    private func hourGutter(scale: CGFloat, height: CGFloat) -> some View {
         VStack(spacing: 0) {
-            Spacer().frame(height: 34)
+            Spacer().frame(height: headerHeight)
             ZStack(alignment: .topTrailing) {
-                Color.clear.frame(height: height(of: hours.duration))
+                Color.clear.frame(height: height)
                 ForEach(hourMarks, id: \.self) { mark in
-                    Text(mark.formatted(.dateTime.hour(.defaultDigits(amPM: .omitted))))
+                    Text(clockTime(mark))
                         .font(Theme.ui(10))
                         .monospacedDigit()
                         .foregroundStyle(Theme.muted)
-                        .offset(y: y(mark) - 6)
+                        .offset(x: -6, y: y(mark, scale: scale) - 6)
                 }
             }
         }
@@ -176,10 +206,8 @@ struct WeekView: View {
         return marks
     }
 
-    private func height(of duration: TimeInterval) -> CGFloat { CGFloat(duration / 60) * pointsPerMinute }
-
-    private func y(_ date: Date) -> CGFloat {
-        CGFloat(sameDayMinutes(date)) * pointsPerMinute
+    private func y(_ date: Date, scale: CGFloat) -> CGFloat {
+        CGFloat(sameDayMinutes(date)) * scale
     }
 
     /// Minutes from the top of the grid, using the clock rather than the date
@@ -191,7 +219,7 @@ struct WeekView: View {
         return max(0, point - start)
     }
 
-    private func dayColumn(_ day: Date) -> some View {
+    private func dayColumn(_ day: Date, scale: CGFloat, height: CGFloat) -> some View {
         let isToday = Calendar.current.isDateInToday(day)
         let rest = model.isRestDay(day)
         return VStack(alignment: .leading, spacing: 4) {
@@ -203,13 +231,13 @@ struct WeekView: View {
                     if isToday { Text("Today").font(Theme.ui(10)).foregroundStyle(Theme.muted) }
                     Spacer(minLength: 0)
                 }
-                Text(dayMeta(day)).font(Theme.ui(10)).foregroundStyle(Theme.muted)
+                Text(dayMeta(day)).font(Theme.ui(10)).foregroundStyle(Theme.muted).lineLimit(1)
             }
-            .frame(height: 30, alignment: .topLeading)
+            .frame(height: headerHeight - 4, alignment: .topLeading)
 
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 7)
-                    .fill(rest ? Theme.background : Theme.surface)
+                    .fill(rest ? Theme.background.opacity(0.7) : Color.clear)
                     .overlay(
                         RoundedRectangle(cornerRadius: 7)
                             .stroke(isToday ? Theme.ink.opacity(0.35) : Theme.border, lineWidth: isToday ? 1.5 : 1)
@@ -218,32 +246,50 @@ struct WeekView: View {
                     RestHatch().stroke(Theme.border, lineWidth: 2).opacity(0.7)
                         .clipShape(RoundedRectangle(cornerRadius: 7))
                 } else {
-                    ForEach(blocks(on: day), id: \.id) { block in
-                        WeekBlock(block: block, day: day, model: model, height: height(of: block.length))
-                            .offset(y: y(block.start))
-                            .padding(.horizontal, 2)
+                    ForEach(model.weekBlocks(on: day), id: \.id) { block in
+                        WeekBlock(
+                            block: block, day: day, model: model,
+                            height: CGFloat(block.length / 60) * scale,
+                            hovered: $hovered
+                        )
+                        .offset(y: y(block.start, scale: scale))
+                        .padding(.horizontal, 2)
                     }
                 }
+                if isToday, let y = nowY(scale: scale) {
+                    HStack(spacing: 0) {
+                        Circle().fill(Theme.now).frame(width: 5, height: 5)
+                        Rectangle().fill(Theme.now).frame(height: 1)
+                    }
+                    .offset(y: y - 2)
+                }
             }
-            .frame(height: height(of: hours.duration))
-            .opacity(day < Calendar.current.startOfDay(for: model.now) ? 0.72 : 1)
+            .frame(height: height)
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .opacity(day < Calendar.current.startOfDay(for: model.now) ? 0.82 : 1)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    private func dayMeta(_ day: Date) -> String {
-        if model.isRestDay(day) { return "Rest day" }
-        guard let share = model.standingShare(on: day) else {
-            return Calendar.current.isDateInToday(day) ? "today" : "no record"
-        }
-        let percent = Int((share * 100).rounded())
-        return Calendar.current.isDateInToday(day) ? "\(percent)% so far" : "Stood \(percent)%"
+    private func nowY(scale: CGFloat) -> CGFloat? {
+        let y = y(model.now, scale: scale)
+        let height = CGFloat(hours.duration / 60) * scale
+        return y > 0 && y < height ? y : nil
     }
 
-    /// Everything on a day, with the open stretches kept so they can be
-    /// dropped into.
-    private func blocks(on day: Date) -> [PlanBlock] {
-        model.blocks(for: day)
+    /// The line under a day's name: how it went, or what's on it.
+    private func dayMeta(_ day: Date) -> String {
+        if model.isRestDay(day) { return "Time off" }
+        let share = model.standingShare(on: day).map { "\(Int(($0 * 100).rounded()))%" }
+        if Calendar.current.isDateInToday(day) {
+            return share.map { "\($0) so far" } ?? "today"
+        }
+        if let share { return "stood \(share)" }
+        let sessions = model.weekBlocks(on: day).count {
+            if case .session = $0.kind { return true } else { return false }
+        }
+        if sessions > 0 { return "\(sessions) \(sessions == 1 ? "session" : "sessions")" }
+        return model.isDeskDay(day) ? "desk day" : "no sessions"
     }
 
     private func spell(_ n: Int) -> String {
@@ -252,7 +298,7 @@ struct WeekView: View {
     }
 }
 
-/// The diagonal hatch that marks a day Carl doesn't work.
+/// The diagonal hatch that marks time off.
 struct RestHatch: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
@@ -266,21 +312,30 @@ struct RestHatch: Shape {
     }
 }
 
-/// One block in the Week grid: fixed things are drawn and named on hover,
-/// goals can be taken off, and open space can be dropped into.
+/// One block in the Week grid: named when there's room, described in the
+/// readout on hover, and - if it's a goal - removable or markable.
 struct WeekBlock: View {
     let block: PlanBlock
     let day: Date
     @Bindable var model: AppModel
     let height: CGFloat
+    @Binding var hovered: String?
+
     @State private var isHovering = false
 
     var body: some View {
         content
             .frame(height: max(3, height), alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .onHover { isHovering = $0 }
-            .help(tooltip)
+            .onHover { inside in
+                isHovering = inside
+                if inside {
+                    hovered = readout
+                } else if hovered == readout {
+                    hovered = nil
+                }
+            }
+            .help(readout)
     }
 
     @ViewBuilder
@@ -294,23 +349,53 @@ struct WeekBlock: View {
         }
     }
 
+    /// The name, when the block is tall enough to hold it. Anything shorter
+    /// is a stripe, and the readout says what it is.
+    @ViewBuilder
+    private func label(_ text: String, colour: Color = Theme.ink) -> some View {
+        if height >= 15 {
+            Text(text)
+                .font(Theme.ui(10, weight: .medium))
+                .foregroundStyle(colour)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .lineLimit(1)
+        }
+    }
+
     private var fixed: some View {
         RoundedRectangle(cornerRadius: 3)
             .fill(fill)
             .overlay(
                 RoundedRectangle(cornerRadius: 3)
-                    .stroke(isHovering ? Theme.ink.opacity(0.3) : .clear, lineWidth: 1)
+                    .stroke(isHovering ? Theme.ink.opacity(0.45) : .clear, lineWidth: 1.5)
             )
-            .overlay(alignment: .topLeading) {
-                if height >= 18, block.isSuggestion {
-                    Text(block.title)
-                        .font(Theme.ui(10, weight: .medium))
-                        .foregroundStyle(Theme.ink)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .lineLimit(1)
+            .overlay(alignment: .topLeading) { label(shortTitle, colour: labelColour) }
+            .contextMenu {
+                // Sessions and notes come from Practice Studio; a break on a
+                // day is something he can take back off it.
+                if block.isSuggestion, let id = block.intermissionID {
+                    Button("Take it off this day") {
+                        model.clearEdits(for: .intermission(id), on: day)
+                    }
                 }
             }
+    }
+
+    private var shortTitle: String {
+        switch block.kind {
+        case .session(let virtual): virtual ? "Virtual" : "Session"
+        case .note: "Note"
+        default: block.title
+        }
+    }
+
+    /// Sessions and calendar blocks are solid, so their labels go light.
+    private var labelColour: Color {
+        switch block.kind {
+        case .session, .calendarEvent: Theme.surface
+        default: Theme.ink
+        }
     }
 
     private var fill: Color {
@@ -324,33 +409,27 @@ struct WeekBlock: View {
 
     private var goal: some View {
         let colour = model.color(for: block.kind)
-        let done = model.goalSlot(block.intermissionID ?? "", on: day).map { model.goalIsDone($0) } ?? false
         return RoundedRectangle(cornerRadius: 3)
             .fill(colour.opacity(isHovering ? 0.36 : 0.22))
             .overlay(
                 RoundedRectangle(cornerRadius: 3)
                     .stroke(colour, lineWidth: isHovering ? 2 : 1.5)
             )
-            .overlay(alignment: .topLeading) {
-                if height >= 16 {
-                    Text(done ? "\(block.title) ✓" : block.title)
-                        .font(Theme.ui(10, weight: .medium))
-                        .foregroundStyle(Theme.ink)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .lineLimit(1)
-                }
-            }
+            .overlay(alignment: .topLeading) { label(isDone ? "\(block.title) ✓" : block.title) }
             .onTapGesture {
                 guard let id = block.intermissionID else { return }
                 model.removeGoal(id, on: day)
             }
             .contextMenu {
                 if let id = block.intermissionID {
-                    Button(done ? "Mark as not done" : "Mark as done") { model.toggleGoalDone(id, on: day) }
+                    Button(isDone ? "Mark as not done" : "Mark as done") { model.toggleGoalDone(id, on: day) }
                     Button("Take it off this day") { model.removeGoal(id, on: day) }
                 }
             }
+    }
+
+    private var isDone: Bool {
+        model.goalSlot(block.intermissionID ?? "", on: day).map { model.goalIsDone($0) } ?? false
     }
 
     private var openSpace: some View {
@@ -358,35 +437,51 @@ struct WeekBlock: View {
         return RoundedRectangle(cornerRadius: 3)
             .fill(droppable
                   ? Theme.primary.opacity(isHovering ? 0.2 : 0.08)
-                  : Theme.ink.opacity(isHovering ? 0.045 : 0))
+                  : Theme.ink.opacity(isHovering ? 0.05 : 0))
             .overlay(
                 RoundedRectangle(cornerRadius: 3)
                     .stroke(
-                        droppable ? Theme.primary.opacity(isHovering ? 1 : 0.45) : Theme.border.opacity(isHovering ? 1 : 0),
+                        droppable
+                            ? Theme.primary.opacity(isHovering ? 1 : 0.45)
+                            : Theme.border.opacity(isHovering ? 1 : 0),
                         lineWidth: droppable && isHovering ? 1.5 : 1
                     )
             )
             .overlay(alignment: .topLeading) {
-                if droppable, height >= 14, let goal = selectedGoal {
-                    Text("+ \(goal.name) \(clockTime(block.start))")
-                        .font(Theme.ui(10))
-                        .foregroundStyle(Theme.primary)
-                        .padding(.horizontal, 5).padding(.vertical, 2)
-                        .lineLimit(1)
-                } else if isHovering, height >= 14 {
-                    Text("\(Int(block.length / 60)) min open")
-                        .font(Theme.ui(10))
-                        .foregroundStyle(Theme.muted)
-                        .padding(.horizontal, 5).padding(.vertical, 2)
+                if droppable, let goal = selectedGoal {
+                    label("+ \(goal.name)", colour: Theme.primary)
+                } else if isHovering {
+                    label("\(Int(block.length / 60)) min", colour: Theme.muted)
                 }
             }
             .contentShape(Rectangle())
             .onTapGesture { place() }
-            .onDrop(of: [.text], isTargeted: nil) { providers in
+            .onDrop(of: [.text], isTargeted: nil) { _ in
                 guard droppable else { return false }
                 place()
-                _ = providers
                 return true
+            }
+            // Putting something in after the fact: the log only knows the
+            // breaks he named at the time, and Monday's lunch happened
+            // whether or not anybody wrote it down.
+            .contextMenu {
+                if model.isWorkingDay(day) {
+                    ForEach(model.breaks.filter(\.enabled), id: \.id) { kind in
+                        Button("\(kind.name) at \(clockTime(block.start))") {
+                            model.recordBreak(
+                                kind.id, on: day, at: block.start,
+                                minutes: min(kind.minutes, max(5, Int(block.length / 60)))
+                            )
+                        }
+                    }
+                    Divider()
+                    ForEach(model.goals, id: \.id) { goal in
+                        Button("\(goal.name) at \(clockTime(block.start))") {
+                            model.placeGoal(goal.id, on: day, at: block.start)
+                        }
+                        .disabled(model.goalSlot(goal.id, on: day) != nil)
+                    }
+                }
             }
     }
 
@@ -394,11 +489,11 @@ struct WeekBlock: View {
         model.goals.first { $0.id == model.selectedGoalID }
     }
 
-    /// A slot can take the selected goal when it fits, the day is one he
-    /// works, it hasn't happened yet, and the goal isn't already on it.
+    /// A slot can take the selected goal when it fits, the day isn't time
+    /// off, and the goal isn't already on that day. The past is allowed:
+    /// it's how something he did but never planned gets on the record.
     private var canDrop: Bool {
         guard let goal = selectedGoal, model.isWorkingDay(day) else { return false }
-        guard block.end > model.now else { return false }
         guard model.goalSlot(goal.id, on: day) == nil else { return false }
         return block.length >= goal.length
     }
@@ -408,18 +503,24 @@ struct WeekBlock: View {
         model.placeGoal(goal.id, on: day, at: block.start)
     }
 
-    private var tooltip: String {
+    /// The line under the headline: which day, what it is, and when.
+    private var readout: String {
         let times = "\(clockTime(block.start))–\(clockTime(block.end))"
+        let dayName = day.formatted(.dateTime.weekday(.abbreviated).day())
         if block.kind == .open {
             guard let goal = selectedGoal, canDrop else {
-                return "\(times) · \(Int(block.length / 60)) min open"
+                return "\(dayName) · \(times) · \(Int(block.length / 60)) min open"
             }
-            return "Put \(goal.name.lowercased()) here"
+            let past = block.start < model.now
+            return "\(dayName) · \(times) · put \(goal.name.lowercased()) here"
+                + (past ? ", as one you did" : "")
         }
+        var parts = ["\(dayName) · \(shortTitle) · \(times)"]
         if block.isGoal {
-            let done = model.goalSlot(block.intermissionID ?? "", on: day).map { model.goalIsDone($0) } ?? false
-            return "\(block.title) · \(times)" + (done ? " · done" : " · click to take it off")
+            parts.append(isDone ? "done" : "planned")
+        } else if let subline = block.subline {
+            parts.append(subline)
         }
-        return "\(block.title) · \(times)"
+        return parts.joined(separator: " · ")
     }
 }

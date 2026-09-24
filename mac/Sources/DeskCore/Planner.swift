@@ -41,6 +41,31 @@ public struct PlanBlock: Equatable, Identifiable, Sendable {
     /// A weekly goal rather than a daily break.
     public var isGoal: Bool = false
 
+    /// Spelled out because a public struct's memberwise initialiser is
+    /// internal, and the app builds blocks of its own - the breaks the log
+    /// says happened on a day nobody planned.
+    public init(
+        kind: Kind,
+        start: Date,
+        end: Date,
+        title: String,
+        subline: String? = nil,
+        badge: String? = nil,
+        isShortened: Bool = false,
+        isMine: Bool = false,
+        isGoal: Bool = false
+    ) {
+        self.kind = kind
+        self.start = start
+        self.end = end
+        self.title = title
+        self.subline = subline
+        self.badge = badge
+        self.isShortened = isShortened
+        self.isMine = isMine
+        self.isGoal = isGoal
+    }
+
     public var length: TimeInterval { end.timeIntervalSince(start) }
     public var isSuggestion: Bool {
         if case .intermission = kind { return true }
@@ -185,12 +210,19 @@ public struct Planner: Sendable {
         }
     }
 
+    /// Lays out a day.
+    ///
+    /// `placeBreaks` is off for a day Carl doesn't work: the day still gets
+    /// its hours, its sessions and its open space - he's often at the desk on
+    /// a Thursday, and a blank screen is no use to him - but the planner
+    /// doesn't drop lunch into a day off as though it had asked to be there.
     public func plan(
         sessions: [PublishedSession],
         events: [CalendarEvent] = [],
         on day: Date,
         edits: [PlanEdit] = [],
         goalSlots: [GoalSlot] = [],
+        placeBreaks: Bool = true,
         workday: DateInterval? = nil,
         configuredHours: DateInterval? = nil,
         workingWindows: [DateInterval] = []
@@ -378,7 +410,7 @@ public struct Planner: Sendable {
         // app filling the day rather than making room in it.
         var openGaps = free()
         for kind in breaks
-        where kind.enabled && kind.runs(on: day, calendar: calendar)
+        where placeBreaks && kind.enabled && kind.runs(on: day, calendar: calendar)
             && !skipped.contains(kind.id) && !swappedAway.contains(kind.id)
             && !edited.contains(kind.id) {
             for _ in 0..<kind.placementsPerDay {

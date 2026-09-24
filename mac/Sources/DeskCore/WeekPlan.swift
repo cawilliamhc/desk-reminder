@@ -132,3 +132,29 @@ public struct WeekPlanStore: Sendable {
         try? JSONEncoder.deskEncoder.encode(sorted).write(to: url, options: .atomic)
     }
 }
+
+/// Where something of this length would go in an empty stretch.
+///
+/// Its start, or the next five-minute mark when the stretch has already
+/// begun - and nowhere at all once the stretch is over. Offering "writing at
+/// 9:00" at twenty to four is a suggestion nobody can take, and this morning's
+/// empty hour is not somewhere to put this afternoon's reading.
+public func placeableStart(
+    length: TimeInterval,
+    in stretch: DateInterval,
+    now: Date,
+    calendar: Calendar = .current
+) -> Date? {
+    guard stretch.end > now else { return nil }
+    // The next five-minute mark, taken from the minute rather than from the
+    // clock: rounding a time that still has seconds on it lands on 3:46.
+    let minute = calendar.component(.minute, from: now)
+    let onTheMinute = calendar.date(
+        from: calendar.dateComponents([.year, .month, .day, .hour, .minute], from: now)
+    ) ?? now
+    let bump = (5 - minute % 5) % 5
+    let soon = onTheMinute.addingTimeInterval(TimeInterval((bump == 0 ? 5 : bump) * 60))
+    let earliest = max(stretch.start, min(soon, stretch.end))
+    guard stretch.end.timeIntervalSince(earliest) >= length else { return nil }
+    return earliest
+}

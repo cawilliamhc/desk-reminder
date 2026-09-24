@@ -328,3 +328,54 @@ private var tea: IntermissionKind {
     #expect(reloaded[Date()].placed("reading") == 1)
     #expect(reloaded[ancient.weekStart].slots.isEmpty)
 }
+
+// MARK: - A day he doesn't work is still a day
+
+@Test func aDayWithNoBreaksStillHasItsHoursAndItsSpace() {
+    // Thursday isn't a desk day, but he's often at the desk anyway - and a
+    // Plan with no hours, no red line and nowhere to add anything is no use.
+    let plan = planner().plan(sessions: wideDay(), on: at(9), placeBreaks: false)
+    #expect(plan.contains { $0.kind == .open })
+    #expect(plan.contains { if case .session = $0.kind { return true } else { return false } })
+    #expect(plan.filter(\.isSuggestion).isEmpty)          // nothing placed for him
+}
+
+@Test func whatHePutOnADayOffIsStillPlaced() {
+    let slot = GoalSlot(goalID: "reading", day: at(0), preferredStart: at(14))
+    let plan = planner().plan(
+        sessions: wideDay(),
+        on: at(9),
+        edits: [PlanEdit(intermissionID: "custom-walk", change: .added(name: "Walk", minutes: 20, at: at(11)))],
+        goalSlots: [slot],
+        placeBreaks: false
+    )
+    #expect(placed(plan, "reading").first?.start == at(14))
+    #expect(placed(plan, "custom-walk").first?.start == at(11))
+}
+
+// MARK: - Where something would go
+
+@Test func aStretchThatHasBegunOffersTheNextFiveMinuteMark() {
+    let afternoon = DateInterval(start: at(13, 30), end: at(17))
+    let start = placeableStart(length: 45 * 60, in: afternoon, now: at(15, 47), calendar: calendar)
+    #expect(start == at(15, 50))
+}
+
+@Test func aStretchStillToComeOffersItsOwnStart() {
+    let afternoon = DateInterval(start: at(13, 30), end: at(17))
+    #expect(placeableStart(length: 45 * 60, in: afternoon, now: at(11), calendar: calendar) == at(13, 30))
+}
+
+@Test func aStretchThatIsOverIsNowhereToPutAnything() {
+    // "Writing at 9:00" offered at twenty to four, from an empty stretch
+    // that ended at half ten.
+    let morning = DateInterval(start: at(9), end: at(10, 30))
+    #expect(placeableStart(length: 45 * 60, in: morning, now: at(15, 40), calendar: calendar) == nil)
+}
+
+@Test func whatIsLeftOfAStretchHasToBeEnough() {
+    let afternoon = DateInterval(start: at(13, 30), end: at(17))
+    // Forty-five minutes of writing doesn't fit into the last half hour.
+    #expect(placeableStart(length: 45 * 60, in: afternoon, now: at(16, 40), calendar: calendar) == nil)
+    #expect(placeableStart(length: 15 * 60, in: afternoon, now: at(16, 40), calendar: calendar) == at(16, 45))
+}

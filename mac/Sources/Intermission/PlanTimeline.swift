@@ -114,17 +114,29 @@ struct OpenSpace: View {
     @Bindable var model: AppModel
     @State private var isHovering = false
 
-    /// The goal with the most left to do this week that would fit here.
-    private var goalOnOffer: IntermissionKind? {
+    /// The goal with the most left to do this week that would fit here, and
+    /// the time it would start - which is now, not this morning, when the
+    /// stretch has already begun.
+    private var goalOnOffer: (kind: IntermissionKind, start: Date)? {
         guard model.rebalance == nil,                          // the banner owns this gap
               model.isWorkingDay(model.shownDate),
               block.end > model.now
         else { return nil }
         let remaining = model.goalsRemaining
         let onToday = Set(model.shownPlan.compactMap { $0.isGoal ? $0.intermissionID : nil })
+        let stretch = DateInterval(start: block.start, end: block.end)
         return model.goals
-            .filter { !onToday.contains($0.id) && (remaining[$0.id] ?? 0) > 0 && $0.length <= block.length }
-            .max { (remaining[$0.id] ?? 0) < (remaining[$1.id] ?? 0) }
+            .filter { !onToday.contains($0.id) && (remaining[$0.id] ?? 0) > 0 }
+            .compactMap { goal in model.start(for: goal, in: stretch).map { (goal, $0) } }
+            .max { (remaining[$0.kind.id] ?? 0) < (remaining[$1.kind.id] ?? 0) }
+    }
+
+    /// "45 min", "3h 20m" - four hundred and eighty minutes is not a length
+    /// anybody reads as a number of hours.
+    private func spanned(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds / 60)
+        guard minutes >= 120 else { return "\(minutes) min" }
+        return minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m"
     }
 
     var body: some View {
@@ -138,7 +150,7 @@ struct OpenSpace: View {
             .overlay {
                 if block.length >= 15 * 60 {
                     HStack(spacing: 6) {
-                        Text(block.title == "Open" ? "\(minutesOnly(block.length)) open" : block.title)
+                        Text(block.title == "Open" ? "\(spanned(block.length)) open" : block.title)
                             .font(Theme.ui(11))
                             .foregroundStyle(isHovering ? Theme.ink : Theme.muted)
                         Spacer(minLength: 8)
@@ -147,9 +159,9 @@ struct OpenSpace: View {
                         // of a goal.
                         if let goal = goalOnOffer {
                             Button {
-                                model.placeGoal(goal.id, on: model.shownDate, at: block.start)
+                                model.placeGoal(goal.kind.id, on: model.shownDate, at: goal.start)
                             } label: {
-                                Text("+ \(goal.name) at \(clockTime(block.start))")
+                                Text("+ \(goal.kind.name) at \(clockTime(goal.start))")
                                     .font(Theme.ui(11))
                                     .foregroundStyle(Theme.ink)
                                     .padding(.horizontal, 9)

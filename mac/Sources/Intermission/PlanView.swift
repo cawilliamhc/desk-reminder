@@ -35,7 +35,7 @@ struct PlanView: View {
                     .font(Theme.headline(24))
                     .foregroundStyle(Theme.ink)
                     .lineSpacing(3)
-                Text("Daily breaks are placed for you, \(spelledBuffer) apart. Weekly goals wait on the right until you add one.")
+                Text(helper)
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.muted)
                 if let rebalance = model.rebalance {
@@ -146,6 +146,19 @@ struct PlanView: View {
     private func eventNoun(_ title: String) -> String {
         let first = title.split(separator: " ").first.map(String.init) ?? "thing"
         return first.lowercased()
+    }
+
+    /// What the day is for. On a day he doesn't work the planner keeps its
+    /// hands off, and saying so is the difference between an empty plan and
+    /// a broken one.
+    private var helper: String {
+        guard model.isDeskDay(model.shownDate) else {
+            let day = model.shownDate.formatted(.dateTime.weekday(.wide))
+            return "\(day) isn't a desk day, so nothing is placed for you. "
+                + "Add what you like, or put a goal in from the right."
+        }
+        return "Daily breaks are placed for you, \(spelledBuffer) apart. "
+            + "Weekly goals wait on the right until you add one."
     }
 
     private var spelledBuffer: String {
