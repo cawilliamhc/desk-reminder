@@ -43,7 +43,7 @@ private func minutes(_ block: PlanBlock?) -> Int? {
     let lunch = block(plan, "lunch")
     #expect(lunch?.start == at(11, 30))
     #expect(lunch?.subline == "Moved by you")
-    #expect(lunch?.badge == "Yours")
+    #expect(lunch?.isMine == true)
 }
 
 @Test func aMovedIntermissionSaysWhenTheDayHasMovedUnderIt() {
@@ -61,9 +61,9 @@ private func minutes(_ block: PlanBlock?) -> Int? {
     let plan = planner().plan(
         sessions: fullDay(),
         on: at(9),
-        edits: [PlanEdit(intermissionID: "reading", change: .skipped)]
+        edits: [PlanEdit(intermissionID: "stretch", change: .skipped)]
     )
-    #expect(block(plan, "reading") == nil)
+    #expect(block(plan, "stretch") == nil)
     #expect(block(plan, "lunch") != nil)     // the others still get placed
 }
 
@@ -71,10 +71,11 @@ private func minutes(_ block: PlanBlock?) -> Int? {
     let plan = planner().plan(
         sessions: fullDay(),
         on: at(9),
-        edits: [PlanEdit(intermissionID: "reading", change: .swapped(for: "call"))]
+        edits: [PlanEdit(intermissionID: "stretch", change: .swapped(for: "call"))]
     )
-    #expect(block(plan, "reading") == nil)
-    #expect(block(plan, "call")?.badge == "Yours")
+    #expect(block(plan, "stretch") == nil)
+    #expect(block(plan, "call")?.subline?.contains("Swapped in by you") == true)
+    #expect(block(plan, "call")?.isMine == true)
 }
 
 @Test func aOneOffIsPlacedWhereItWasPut() {
@@ -96,8 +97,8 @@ private func minutes(_ block: PlanBlock?) -> Int? {
         edits: [PlanEdit(intermissionID: "lunch", change: .moved(to: at(11, 30)))]
     )
     let lunch = block(plan, "lunch")!
-    let reading = block(plan, "reading")!
-    #expect(reading.start >= lunch.end || reading.end <= lunch.start)
+    let stretch = block(plan, "stretch")!
+    #expect(stretch.start >= lunch.end || stretch.end <= lunch.start)
 }
 
 @Test func applyReplacesAnEditOfTheSameSort() {
@@ -107,7 +108,7 @@ private func minutes(_ block: PlanBlock?) -> Int? {
     #expect(day.edits.count == 1)
     #expect(day.edits.first?.change == .moved(to: at(12)))       // the later time wins
 
-    day.apply(PlanEdit(intermissionID: "reading", change: .skipped))
+    day.apply(PlanEdit(intermissionID: "stretch", change: .skipped))
     #expect(day.edits.count == 2)                                 // different things, both kept
 }
 
@@ -155,6 +156,7 @@ private func minutes(_ block: PlanBlock?) -> Int? {
     let stretches = plan.filter { $0.kind == .intermission(id: "stretch") }
     #expect(stretches.count == 1)
     #expect(stretches.first?.start == at(14, 30))      // where he put it
+    #expect(stretches.first?.isMine == true)
 }
 
 @Test func movingSomethingSkippedMeansHeWantsItBack() {
@@ -173,20 +175,18 @@ private func minutes(_ block: PlanBlock?) -> Int? {
     #expect(day.edits.first?.change == .skipped)
 }
 
-@Test func noIntermissionIsEverPlacedTwice() {
+@Test func nothingIsPlacedMoreOftenThanItsCadenceAllows() {
     let plan = planner().plan(
         sessions: fullDay(),
         on: at(9),
         edits: [
             PlanEdit(intermissionID: "lunch", change: .moved(to: at(12))),
-            PlanEdit(intermissionID: "reading", change: .swapped(for: "lunch")),
+            PlanEdit(intermissionID: "stretch", change: .swapped(for: "lunch")),
         ]
     )
-    let ids = plan.compactMap { block -> String? in
-        if case .intermission(let id) = block.kind { return id }
-        return nil
-    }
-    #expect(ids.count == Set(ids).count)
+    let ids = plan.compactMap(\.intermissionID)
+    #expect(ids.count { $0 == "lunch" } == 1)          // moved once, not moved and swapped in
+    #expect(ids.count { $0 == "stretch" } <= 2)        // twice a day is its whole rule
 }
 
 @Test func blocksStartingTogetherAreStillTwoThings() {

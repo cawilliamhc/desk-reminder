@@ -25,7 +25,7 @@ enum Paths {
 @MainActor
 @Observable
 final class AppModel {
-    enum View: String, CaseIterable { case plan, today, settings }
+    enum View: String, CaseIterable { case plan, week, today, settings }
     enum PlanDay: String, CaseIterable, Identifiable {
         case today, tomorrow
         var id: String { rawValue }
@@ -60,14 +60,27 @@ final class AppModel {
     private(set) var skippedIntermissions: Set<String> = []
     /// Intermissions already announced today, so each is said once.
     private var announcedIntermissions: Set<String> = []
-    /// Today's intermissions that wouldn't fit anywhere.
+    /// Today's daily breaks that wouldn't fit anywhere.
     private(set) var unplacedToday: [IntermissionKind] = []
+    /// This week's goal placements, and the goal Week has selected.
+    private(set) var weekPlan: WeekPlan
+    var selectedGoalID: String?
+    /// Time that has opened up, and what could be done with it. Nothing
+    /// moves until Carl picks one of the options.
+    private(set) var rebalance: Rebalance?
+    /// Which option is chosen in the banner.
+    var rebalanceChoice: String = ""
+    /// What was done with the freed time, and how to take it back.
+    private(set) var rebalanceStrip: RebalanceStrip?
+    /// The card being edited in Settings.
+    var editingIntermissionID: String?
     let calendars = Calendars()
     var settings: DeskCore.Settings { didSet { settingsChanged(oldValue) } }
 
     private var coach: Coach
     private var days: DayStore
     private var plans: PlanStore
+    private var weeks: WeekPlanStore
     private let logs: LogStore
     private var schedule: SessionSchedule
     private let settingsStore: SettingsStore
@@ -76,6 +89,8 @@ final class AppModel {
     private var monitor: SerialMonitor?
     private var lastCheck = Date()
     private var lastSaved = Date.distantPast
+    /// The schedule as it was on the last tick, for noticing a change.
+    private var lastSignature = ""
     private var snoozedUntil: Date?
     private var currentDay: Date
 
@@ -87,6 +102,9 @@ final class AppModel {
         self.coach = Coach(settings: settings)
         self.days = DayStore(url: Self.supportDirectory.appending(path: "days.json"))
         self.plans = PlanStore(url: Self.supportDirectory.appending(path: "plans.json"))
+        let weeks = WeekPlanStore(url: Self.supportDirectory.appending(path: "weeks.json"))
+        self.weeks = weeks
+        self.weekPlan = weeks[Date()]
         self.logs = LogStore(url: Self.supportDirectory.appending(path: "logs.json"))
         let saved = logs.load()
         self.heights = saved.heights
@@ -205,6 +223,21 @@ final class AppModel {
         )
 
         schedule.reload()
+        // The day changing under a plan is the third thing that opens time
+        // up, alongside a cancellation and an early finish.
+        let signature = schedule.sessions(on: currentDay).signature
+        if signature != lastSignature {
+            let hadOne = !lastSignature.isEmpty
+            lastSignature = signature
+            if hadOne {
+                rebuildPlan()
+                offerRebalance(
+                    .calendarChanged,
+                    reason: "Your day has changed since you planned it.",
+                    edit: nil
+                )
+            }
+        }
         let inSession = schedule.session(covering: now) != nil || schedule.isDayOff(now)
         for _ in schedule.endings(after: lastCheck, until: now) {
             // Every session ends in a standing note, virtual included.
@@ -345,11 +378,11 @@ final class AppModel {
 
     func rebuildPlan() {
         schedule.reload()
+        weekPlan = weeks[Date()]
         plan = blocks(for: Date())
         events = calendars.events(on: Date(), calendarIDs: settings.calendarIDs)
 
-        let planner = Planner(intermissions: settings.intermissions, settleMinutes: settings.settleMinutes)
-        unplacedToday = schedule.isDayOff(Date()) ? [] : planner.unplaced(in: plan, on: Date())
+        unplacedToday = schedule.isDayOff(Date()) ? [] : planner().unplaced(in: plan, on: Date())
 
         let shown = shownDate
         shownPlan = planDay == .today ? plan : blocks(for: shown)
@@ -361,22 +394,39 @@ final class AppModel {
             && saved.scheduleSignature != schedule.sessions(on: shown).signature
     }
 
-    /// The plan for a day: its sessions and events, laid out around whatever
-    /// Carl has already changed about it.
-    private func blocks(for day: Date) -> [PlanBlock] {
+    /// The planner, set up from the settings as they are now.
+    private func planner() -> Planner {
+        Planner(
+            intermissions: settings.intermissions.filter { !skippedIntermissions.contains($0.id) },
+            settleMinutes: settings.settleMinutes,
+            bufferMinutes: settings.bufferMinutes,
+            calendarEventMode: settings.calendarEventMode
+        )
+    }
+
+    /// The plan for a day: its sessions and events, the goals Carl has put on
+    /// it, and whatever else he's already changed about it.
+    func blocks(for day: Date) -> [PlanBlock] {
         // A day off is a day off: no plan, nothing to nudge about.
         guard !schedule.isDayOff(day) else { return [] }
-        let planner = Planner(
-            intermissions: settings.intermissions.filter { !skippedIntermissions.contains($0.id) },
-            settleMinutes: settings.settleMinutes
-        )
-        return planner.plan(
+        return planner().plan(
             sessions: schedule.sessions,
             events: calendars.events(on: day, calendarIDs: settings.calendarIDs),
             on: day,
             edits: plans[day].edits,
+            goalSlots: weeks[day].slots(on: day),
             configuredHours: schedule.workingHours(on: day),
             workingWindows: schedule.workingWindows(on: day)
+        )
+    }
+
+    /// The hours a day's plan covers, for the timeline and the Week grid.
+    func planWindow(for day: Date) -> DateInterval {
+        planner().workday(
+            sessions: schedule.sessions(on: day),
+            events: calendars.events(on: day, calendarIDs: settings.calendarIDs),
+            on: day,
+            configuredHours: schedule.workingHours(on: day)
         )
     }
 
@@ -397,6 +447,18 @@ final class AppModel {
         var day = plans[shownDate]
         day.committedAt = Date()
         day.scheduleSignature = schedule.sessions(on: shownDate).signature
+        // Starting the day with this plan pins what's in it. Until now the
+        // whole day was laid out again on every rebuild, so a session moving
+        // at noon could quietly shuffle the afternoon's breaks; from here
+        // they stay where he agreed to them, and the rebalance banner is the
+        // only thing that offers to change that.
+        for block in shownPlan where block.isSuggestion && !block.isMine && !block.isGoal {
+            guard let id = block.intermissionID else { continue }
+            day.apply(PlanEdit(intermissionID: id, change: .pinned(to: block.start)))
+            if block.isShortened {
+                day.apply(PlanEdit(intermissionID: id, change: .resized(minutes: Int(block.length / 60))))
+            }
+        }
         plans[shownDate] = day
         plans.save()
         rebuildPlan()
@@ -447,11 +509,27 @@ final class AppModel {
     }
 
     func removeFromPlan(_ intermissionID: String) {
-        if isOneOff(intermissionID) {
+        let block = shownPlan.first { $0.intermissionID == intermissionID }
+        if block?.isGoal == true {
+            // A goal isn't skipped, it's taken off the day and goes back to
+            // the tray for another one.
+            removeGoal(intermissionID, on: shownDate)
+        } else if isOneOff(intermissionID) {
             undoEdits(for: intermissionID)
         } else {
             apply(.skipped, to: intermissionID)
         }
+        // Skipping a ten-minute stretch is a shrug; skipping lunch leaves
+        // most of an hour, and that's worth offering back.
+        guard planDay == .today, let block,
+              Int(block.length / 60) >= settings.rebalanceAfterSkipMinutes
+        else { return }
+        offerRebalance(
+            .skipped(id: intermissionID, name: block.title),
+            reason: "You skipped \(block.title.lowercased()).",
+            edit: nil,
+            opened: DateInterval(start: block.start, end: block.end)
+        )
     }
 
     /// Drops a recurring intermission from the list for good.
@@ -514,8 +592,401 @@ final class AppModel {
         plan.first { $0.start <= now && now < $0.end }
     }
 
-    /// Intermissions that could stand in for another one.
-    var swapCandidates: [IntermissionKind] { settings.intermissions }
+    /// Breaks that could stand in for another one. A weekly goal never
+    /// stands in for anything: it happens because Carl put it somewhere.
+    var swapCandidates: [IntermissionKind] { settings.intermissions.filter { !$0.isGoal && $0.enabled } }
+
+    // MARK: - Weekly goals
+
+    var goals: [IntermissionKind] { settings.intermissions.filter { $0.isGoal && $0.enabled } }
+    var breaks: [IntermissionKind] { settings.intermissions.filter { !$0.isGoal } }
+
+    /// Done, planned and the week's target for a goal.
+    ///
+    /// "Done" is the log's answer unless Carl has overridden it: he was away
+    /// from the computer for most of the time the goal was planned for.
+    func goalProgress(_ id: String) -> (done: Int, planned: Int, target: Int) {
+        let target = settings.intermissions.first { $0.id == id }?.perWeek ?? 0
+        var done = 0
+        var planned = 0
+        for slot in weekPlan.slots where slot.goalID == id {
+            if goalIsDone(slot) { done += 1 } else { planned += 1 }
+        }
+        return (done, planned, target)
+    }
+
+    func goalIsDone(_ slot: GoalSlot) -> Bool {
+        goalWasDone(slot: slot, planned: plannedInterval(for: slot), computer: computer, now: now)
+    }
+
+    /// When a goal actually sits on its day, which is what "done" is judged
+    /// against. Nil when the day couldn't fit it after all.
+    private func plannedInterval(for slot: GoalSlot) -> DateInterval? {
+        guard let block = blocks(for: slot.day).first(where: { $0.intermissionID == slot.goalID })
+        else { return nil }
+        return DateInterval(start: block.start, end: block.end)
+    }
+
+    /// How many of each goal are still without a slot this week.
+    var goalsRemaining: [String: Int] {
+        goals.reduce(into: [:]) { remaining, goal in
+            let progress = goalProgress(goal.id)
+            remaining[goal.id] = max(0, progress.target - progress.done - progress.planned)
+        }
+    }
+
+    var goalSlotsLeft: Int { goalsRemaining.values.reduce(0, +) }
+
+    func goalSlot(_ id: String, on day: Date) -> GoalSlot? { weekPlan.slot(for: id, on: day) }
+
+    /// The first open stretch on a day that a goal would fit into, buffers
+    /// and working hours included. Nil when the day has no room for it.
+    func goalFit(_ goal: IntermissionKind, on day: Date) -> Date? {
+        guard !schedule.isDayOff(day), settings.isDeskDay(day) || !schedule.sessions(on: day).isEmpty
+        else { return nil }
+        let blocks = blocks(for: day)
+        return planner()
+            .openStretches(
+                in: blocks,
+                window: planWindow(for: day),
+                workingWindows: schedule.workingWindows(on: day)
+            )
+            .first { $0.duration >= goal.length && $0.end > now }?
+            .start
+    }
+
+    func placeGoal(_ id: String, on day: Date, at start: Date? = nil) {
+        var week = weeks[day]
+        week.place(id, on: day, at: start)
+        weeks[day] = week
+        weeks.save()
+        selectedGoalID = nil
+        rebuildPlan()
+    }
+
+    func removeGoal(_ id: String, on day: Date) {
+        var week = weeks[day]
+        week.remove(id, on: day)
+        weeks[day] = week
+        weeks.save()
+        rebuildPlan()
+    }
+
+    /// The tick in the tray: says it happened, or says it didn't, whatever
+    /// the log thinks.
+    func toggleGoalDone(_ id: String, on day: Date) {
+        guard let slot = goalSlot(id, on: day) else { return }
+        var week = weeks[day]
+        week.mark(id, on: day, done: !goalIsDone(slot))
+        weeks[day] = week
+        weeks.save()
+        rebuildPlan()
+    }
+
+    /// What an intermission is doing today, for its card in Settings.
+    ///
+    /// The card used to show the rule and nothing else, so there was no way
+    /// to tell a break that was placed this morning from one that hasn't
+    /// fitted in a fortnight.
+    func todayStatus(for kind: IntermissionKind) -> String {
+        guard kind.enabled else { return "Off" }
+        let today = plan.filter { $0.intermissionID == kind.id }.sorted { $0.start < $1.start }
+
+        if kind.isGoal {
+            let progress = goalProgress(kind.id)
+            var text = "\(progress.done) done, \(progress.planned) planned of \(progress.target)"
+            if let block = today.first {
+                text += " · today at \(clock(block.start))"
+            } else if goalFit(kind, on: Date()) == nil {
+                text += " · no gap fits today"
+            }
+            return text
+        }
+
+        guard kind.runs(on: Date()) else {
+            return nextDay(for: kind).map { "Not today · next \($0.shortName)" } ?? "Not today"
+        }
+        guard let first = today.first else {
+            return isDayOff ? "Not today · a day off" : "Didn't fit today"
+        }
+        let times = "Today \(clock(first.start))–\(clock(first.end))"
+        if kind.placementsPerDay > 1 {
+            guard today.count > 1 else { return times + " · no room for a second" }
+            return times + " and \(clock(today[1].start))–\(clock(today[1].end))"
+        }
+        return times
+    }
+
+    /// The next day this break runs, for "Not today · next Thu".
+    private func nextDay(for kind: IntermissionKind) -> Weekday? {
+        let calendar = Calendar.current
+        for ahead in 1...7 {
+            guard let day = calendar.date(byAdding: .day, value: ahead, to: Date()) else { continue }
+            if kind.runs(on: day) { return Weekday(rawValue: calendar.component(.weekday, from: day)) }
+        }
+        return nil
+    }
+
+    /// Adds a break or a goal and opens its editor.
+    func addIntermission(role: IntermissionKind.Role) {
+        let kind = IntermissionKind.blank(role: role, id: "custom-\(UUID().uuidString.prefix(8))")
+        settings.intermissions.append(kind)
+        editingIntermissionID = kind.id
+    }
+
+    /// Puts a built-in back the way it came. Carl's own have no default, so
+    /// their card offers Delete instead.
+    func resetIntermission(_ id: String) {
+        guard let index = settings.intermissions.firstIndex(where: { $0.id == id }),
+              let original = settings.intermissions[index].builtIn else { return }
+        settings.intermissions[index] = original
+    }
+
+    // MARK: - The week
+
+    /// The days the Week grid shows: his desk days, plus any day that has
+    /// sessions on it after all. A Thursday with a client on it is part of
+    /// the week whether or not it was meant to be.
+    var weekDays: [Date] {
+        let calendar = Calendar.current
+        let start = WeekPlan.weekStart(of: now)
+        return (0..<7).compactMap { offset -> Date? in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: start) else { return nil }
+            guard settings.isDeskDay(day) || !schedule.sessions(on: day).isEmpty else { return nil }
+            return day
+        }
+    }
+
+    /// True when the day is one he meant to work: it takes goals and counts
+    /// towards the week's standing average. A session on a day off shows,
+    /// but it isn't a day to plan into.
+    func isWorkingDay(_ day: Date) -> Bool {
+        settings.isDeskDay(day) && !schedule.isDayOff(day)
+    }
+
+    func isRestDay(_ day: Date) -> Bool { !isWorkingDay(day) }
+
+    /// The hours the grid's rows cover: the widest working day of the week,
+    /// so every column lines up on the same clock.
+    var weekHours: DateInterval {
+        let windows = weekDays.map { planWindow(for: $0) }
+        guard let first = windows.map(\.start).min(), let last = windows.map(\.end).max() else {
+            let start = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: now)!
+            return DateInterval(start: start, duration: 9 * 3600)
+        }
+        return DateInterval(start: first, end: last)
+    }
+
+    /// What a day's standing came to, or nil when nothing was recorded.
+    func standingShare(on day: Date) -> Double? {
+        let record = days[day]
+        guard record.isRecorded else { return nil }
+        return record.standingShare
+    }
+
+    /// The week's standing, averaged across the desk days that have a number.
+    var weekStandingShare: Double? {
+        let shares = weekDays.filter { isWorkingDay($0) }.compactMap { standingShare(on: $0) }
+        guard !shares.isEmpty else { return nil }
+        return shares.reduce(0, +) / Double(shares.count)
+    }
+
+    var weeklyStandingGoal: Double { settings.weeklyStandingGoal ?? settings.standingGoal }
+
+    // MARK: - Rebalancing
+
+    struct RebalanceStrip: Equatable {
+        var text: String
+        var actions: [Rebalance.Action]
+        var trigger: Rebalance.Trigger
+        /// The edit that opened the time, so Undo can put the day back.
+        var triggeringEdit: PlanEdit?
+    }
+
+    /// An edit to something fixed: a session that didn't happen, one that
+    /// finished early, a calendar event he'll be at the computer for.
+    func apply(_ change: PlanEdit.Change, to target: PlanEdit.Target) {
+        let edit = PlanEdit(target: target, change: change)
+        var day = plans[shownDate]
+        day.apply(edit)
+        plans[shownDate] = day
+        plans.save()
+        rebuildPlan()
+
+        guard planDay == .today else { return }
+        switch change {
+        case .didNotHappen:
+            if case .session(let start) = target {
+                offerRebalance(
+                    .sessionDidNotHappen(start: start),
+                    reason: "Your \(clock(start)) session didn't happen.",
+                    edit: edit,
+                    opened: schedule.sessions(on: currentDay)
+                        .first { $0.start == start }
+                        .map { DateInterval(start: $0.start, end: $0.end) }
+                )
+            } else if case .event(let start, let title) = target {
+                offerRebalance(
+                    .calendarChanged, reason: "\(title) is off.", edit: edit,
+                    opened: events.first { $0.start == start && $0.title == title }
+                        .map { DateInterval(start: $0.start, end: $0.end) }
+                )
+            }
+        case .endedEarly(let minutes):
+            if case .session(let start) = target {
+                let freed = schedule.sessions(on: currentDay).first { $0.start == start }.map {
+                    DateInterval(start: $0.end.addingTimeInterval(TimeInterval(-minutes * 60)), end: $0.end)
+                }
+                offerRebalance(
+                    .sessionEndedEarly(start: start, minutes: minutes),
+                    reason: "Your \(clock(start)) ended \(minutes) min early.",
+                    edit: edit,
+                    opened: freed
+                )
+            }
+        default:
+            break
+        }
+    }
+
+    func clearEdits(for target: PlanEdit.Target) {
+        var day = plans[shownDate]
+        day.clearEdits(for: target)
+        plans[shownDate] = day
+        plans.save()
+        rebuildPlan()
+    }
+
+    func edits(for target: PlanEdit.Target) -> [PlanEdit] { plans[shownDate].edits(for: target) }
+
+    /// Offers the freed time back. One option isn't a choice, so the banner
+    /// only appears when there are at least two; otherwise the strip says
+    /// what happened and leaves it there.
+    private func offerRebalance(
+        _ trigger: Rebalance.Trigger, reason: String, edit: PlanEdit?, opened: DateInterval? = nil
+    ) {
+        guard settings.onCalendarChange == .ask else { return }
+        guard !plans[currentDay].settledRebalances.contains(trigger.key) else { return }
+        let offer = planner().rebalance(
+            trigger: trigger,
+            reason: reason,
+            blocks: plan,
+            goalsRemaining: goalsRemaining,
+            placedGoalsToday: Set(weekPlan.slots(on: currentDay).map(\.goalID)),
+            on: currentDay,
+            window: planWindow(for: currentDay),
+            workingWindows: schedule.workingWindows(on: currentDay),
+            opened: opened
+        )
+        guard let offer else {
+            rebalanceStrip = RebalanceStrip(
+                text: reason + " The time stays open.",
+                actions: [], trigger: trigger, triggeringEdit: edit
+            )
+            settle(trigger)
+            return
+        }
+        rebalance = offer
+        rebalanceChoice = offer.selected
+        rebalanceStrip = nil
+    }
+
+    func applyRebalance() {
+        guard let offer = rebalance,
+              let option = offer.options.first(where: { $0.id == rebalanceChoice }) ?? offer.options.first
+        else { return }
+        for action in option.actions { perform(action) }
+        rebalanceStrip = RebalanceStrip(
+            text: option.confirmation,
+            actions: option.actions,
+            trigger: offer.trigger,
+            triggeringEdit: triggeringEdit(for: offer.trigger)
+        )
+        settle(offer.trigger)
+        rebalance = nil
+        rebuildPlan()
+    }
+
+    /// "Not now": the gap stays open and the banner goes away.
+    func dismissRebalance() {
+        guard let offer = rebalance else { return }
+        rebalanceStrip = RebalanceStrip(
+            text: "Left it open. The time stays yours.",
+            actions: [],
+            trigger: offer.trigger,
+            triggeringEdit: triggeringEdit(for: offer.trigger)
+        )
+        settle(offer.trigger)
+        rebalance = nil
+    }
+
+    /// Undo takes back what was applied AND what opened the time, so the day
+    /// goes back to what it was rather than to a half-changed version of it.
+    func undoRebalance() {
+        guard let strip = rebalanceStrip else { return }
+        for action in strip.actions { reverse(action) }
+        if let edit = strip.triggeringEdit {
+            var day = plans[currentDay]
+            day.remove([edit])
+            plans[currentDay] = day
+            plans.save()
+        }
+        var day = plans[currentDay]
+        day.settledRebalances.remove(strip.trigger.key)
+        plans[currentDay] = day
+        plans.save()
+        rebalanceStrip = nil
+        rebuildPlan()
+    }
+
+    func hideRebalanceStrip() { rebalanceStrip = nil }
+
+    private func perform(_ action: Rebalance.Action) {
+        switch action {
+        case .edit(let edit):
+            var day = plans[currentDay]
+            day.apply(edit)
+            plans[currentDay] = day
+            plans.save()
+        case .placeGoal(let id, let at):
+            placeGoal(id, on: currentDay, at: at)
+        }
+    }
+
+    private func reverse(_ action: Rebalance.Action) {
+        switch action {
+        case .edit(let edit):
+            var day = plans[currentDay]
+            day.remove([edit])
+            plans[currentDay] = day
+            plans.save()
+        case .placeGoal(let id, _):
+            removeGoal(id, on: currentDay)
+        }
+    }
+
+    private func settle(_ trigger: Rebalance.Trigger) {
+        var day = plans[currentDay]
+        day.settledRebalances.insert(trigger.key)
+        plans[currentDay] = day
+        plans.save()
+    }
+
+    private func triggeringEdit(for trigger: Rebalance.Trigger) -> PlanEdit? {
+        switch trigger {
+        case .sessionDidNotHappen(let start):
+            plans[currentDay].edits(for: .session(start: start)).first { $0.change == .didNotHappen }
+        case .sessionEndedEarly(let start, let minutes):
+            plans[currentDay].edits(for: .session(start: start))
+                .first { $0.change == .endedEarly(minutes: minutes) }
+        case .calendarChanged, .skipped:
+            nil
+        }
+    }
+
+    private func clock(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
 
     // MARK: - The evening offer to plan tomorrow
 
@@ -604,6 +1075,19 @@ final class AppModel {
     /// window to run out. Standing already counted when the desk went up.
     func noteDone() {
         coach.cancel()
+    }
+
+    /// "Skip ahead" on the Now card: this session is over, whatever
+    /// sessions.json still says. A manual override, not the normal path -
+    /// the phase moves on by itself when the published hour ends.
+    func endSessionEarly() {
+        planDay = .today
+        guard let block = plan.first(where: {
+            if case .session = $0.kind { return $0.start <= now && now < $0.end }
+            return false
+        }), let target = block.target else { return }
+        let minutes = max(1, Int((block.end.timeIntervalSince(now) / 60).rounded()))
+        apply(.endedEarly(minutes: minutes), to: target)
     }
 
     /// When the office closes on a given day, for deciding that time away
@@ -696,7 +1180,11 @@ final class AppModel {
         if settings.listenToDesk != old.listenToDesk {
             settings.listenToDesk ? startListening() : stopListening()
         }
-        if settings.intermissions != old.intermissions || settings.calendarIDs != old.calendarIDs {
+        if settings.intermissions != old.intermissions || settings.calendarIDs != old.calendarIDs
+            || settings.bufferMinutes != old.bufferMinutes
+            || settings.calendarEventMode != old.calendarEventMode
+            || settings.settleMinutes != old.settleMinutes
+            || settings.deskDays != old.deskDays {
             rebuildPlan()
         }
     }

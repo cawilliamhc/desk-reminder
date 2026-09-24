@@ -114,6 +114,16 @@ struct OpenSpace: View {
     @Bindable var model: AppModel
     @State private var isHovering = false
 
+    /// The goal with the most left to do this week that would fit here.
+    private var goalOnOffer: IntermissionKind? {
+        guard model.rebalance == nil else { return nil }      // the banner owns this gap
+        let remaining = model.goalsRemaining
+        let onToday = Set(model.shownPlan.compactMap { $0.isGoal ? $0.intermissionID : nil })
+        return model.goals
+            .filter { !onToday.contains($0.id) && (remaining[$0.id] ?? 0) > 0 && $0.length <= block.length }
+            .max { (remaining[$0.id] ?? 0) < (remaining[$1.id] ?? 0) }
+    }
+
     var body: some View {
         let candidates = model.candidates(for: block)
         RoundedRectangle(cornerRadius: 6)
@@ -125,9 +135,31 @@ struct OpenSpace: View {
             .overlay {
                 if block.length >= 15 * 60 {
                     HStack(spacing: 6) {
-                        Text("\(minutesOnly(block.length)) open")
+                        Text(block.title == "Open" ? "\(minutesOnly(block.length)) open" : block.title)
                             .font(Theme.ui(11))
                             .foregroundStyle(isHovering ? Theme.ink : Theme.muted)
+                        Spacer(minLength: 8)
+                        // A goal with a week still to fill, and room here for
+                        // it. Offered, never placed - that's the whole point
+                        // of a goal.
+                        if let goal = goalOnOffer {
+                            Button {
+                                model.placeGoal(goal.id, on: model.shownDate, at: block.start)
+                            } label: {
+                                Text("+ \(goal.name) here")
+                                    .font(Theme.ui(11))
+                                    .foregroundStyle(Theme.ink)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 4)
+                                    .background(Theme.surface)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(isHovering ? Theme.ink.opacity(0.45) : Theme.border, lineWidth: 1)
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+                            .buttonStyle(.plain)
+                        }
                         if !candidates.isEmpty {
                             Menu("Fill it") {
                                 ForEach(candidates, id: \.id) { kind in
@@ -142,6 +174,7 @@ struct OpenSpace: View {
                             .font(Theme.ui(11))
                         }
                     }
+                    .padding(.horizontal, 10)
                 }
             }
             .onHover { isHovering = $0 }
@@ -156,6 +189,7 @@ struct TimelineBlock: View {
     @State private var dragOffset: CGFloat = 0
     @State private var dragMinutes = 0
     @State private var resizeMinutes = 0
+    @State private var isEditing = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -176,25 +210,49 @@ struct TimelineBlock: View {
                     }
                     Spacer()
                     Text(times).font(Theme.ui(10)).monospacedDigit().foregroundStyle(Theme.muted)
+                    // Every fixed block can be edited, however short: the
+                    // ten-minute one is exactly the one that didn't happen.
+                    if isFixed {
+                        Button("Edit") { isEditing = true }
+                            .buttonStyle(.plain)
+                            .font(Theme.ui(12))
+                            .foregroundStyle(Theme.muted)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(isEditing ? Theme.background : .clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .popover(isPresented: $isEditing, arrowEdge: .trailing) {
+                                FixedBlockEditor(block: block, model: model, isPresented: $isEditing)
+                            }
+                    }
                 }
                 if let subline = block.subline, block.length >= 25 * 60 {
                     Text(subline).font(Theme.ui(10)).foregroundStyle(Theme.muted).lineLimit(1)
                 }
                 if isDraggable, block.length >= 30 * 60, let id = intermissionID {
                     HStack(spacing: 8) {
-                        Menu("Swap") {
-                            ForEach(model.swapCandidates.filter { $0.id != id }, id: \.id) { kind in
-                                Button(kind.name) { model.apply(.swapped(for: kind.id), to: id) }
-                            }
-                        }
-                        .menuStyle(.borderlessButton)
-                        .frame(width: 52)
-                        Button(model.isOneOff(id) ? "Remove" : "Skip") { model.removeFromPlan(id) }
-                            .buttonStyle(.borderless)
-                        if block.badge == "Yours", !model.isOneOff(id) {
-                            Button("Undo") { model.undoEdits(for: id) }
+                        if block.isGoal {
+                            Button("Remove") { model.removeFromPlan(id) }
                                 .buttonStyle(.borderless)
-                                .foregroundStyle(Theme.muted)
+                            Button(isGoalDone ? "Not done" : "Done") {
+                                model.toggleGoalDone(id, on: model.shownDate)
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(Theme.muted)
+                        } else {
+                            Menu("Swap") {
+                                ForEach(model.swapCandidates.filter { $0.id != id }, id: \.id) { kind in
+                                    Button(kind.name) { model.apply(.swapped(for: kind.id), to: id) }
+                                }
+                            }
+                            .menuStyle(.borderlessButton)
+                            .frame(width: 52)
+                            Button(model.isOneOff(id) ? "Remove" : "Skip") { model.removeFromPlan(id) }
+                                .buttonStyle(.borderless)
+                            if block.isMine, !model.isOneOff(id) {
+                                Button("Undo") { model.undoEdits(for: id) }
+                                    .buttonStyle(.borderless)
+                                    .foregroundStyle(Theme.muted)
+                            }
                         }
                         Spacer()
                     }
@@ -217,14 +275,26 @@ struct TimelineBlock: View {
         // here too - a ten-minute stretch was impossible to remove otherwise.
         .contextMenu {
             if let id = intermissionID {
-                Button(model.isOneOff(id) ? "Remove" : "Skip today") { model.removeFromPlan(id) }
-                Menu("Swap for") {
-                    ForEach(model.swapCandidates.filter { $0.id != id }, id: \.id) { kind in
-                        Button(kind.name) { model.apply(.swapped(for: kind.id), to: id) }
+                if block.isGoal {
+                    Button("Take it off today") { model.removeFromPlan(id) }
+                    Button(isGoalDone ? "Mark as not done" : "Mark as done") {
+                        model.toggleGoalDone(id, on: model.shownDate)
                     }
+                } else {
+                    Button(model.isOneOff(id) ? "Remove" : "Skip today") { model.removeFromPlan(id) }
+                    Menu("Swap for") {
+                        ForEach(model.swapCandidates.filter { $0.id != id }, id: \.id) { kind in
+                            Button(kind.name) { model.apply(.swapped(for: kind.id), to: id) }
+                        }
+                    }
+                    Divider()
+                    Button("Back to the suggestion") { model.undoEdits(for: id) }
                 }
-                Divider()
-                Button("Back to the suggestion") { model.undoEdits(for: id) }
+            } else if isFixed {
+                Button("Edit…") { isEditing = true }
+                Button("Didn't happen") {
+                    if let target = block.target { model.apply(.didNotHappen, to: target) }
+                }
             }
         }
     }
@@ -234,6 +304,19 @@ struct TimelineBlock: View {
     }
 
     private var isDraggable: Bool { intermissionID != nil }
+
+    /// Sessions and calendar events: the day as it was handed to him.
+    private var isFixed: Bool {
+        switch block.kind {
+        case .session, .calendarEvent: true
+        default: false
+        }
+    }
+
+    private var isGoalDone: Bool {
+        guard let id = intermissionID, let slot = model.goalSlot(id, on: model.shownDate) else { return false }
+        return model.goalIsDone(slot)
+    }
 
     private var intermissionID: String? {
         if case .intermission(let id) = block.kind { return id }

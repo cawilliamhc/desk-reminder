@@ -80,9 +80,9 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
     let lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
     let plan = planner([lunch]).plan(sessions: [session(9, to: 9, 50), session(14, to: 14, 50)], on: at(9))
     let block = intermission(plan, "lunch")
-    #expect(block?.start == at(12, 30))
-    #expect(block?.subline == nil)
-    #expect(block?.badge == "Suggested")
+    #expect(block?.start == at(12))
+    #expect(block?.subline == nil)                 // desk rule "any" adds nothing
+    #expect(block?.badge == "Daily break")
 }
 
 @Test func lunchMovesAndSaysWhyWhenTheUsualTimeIsBusy() {
@@ -93,43 +93,53 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
     )
     let block = intermission(plan, "lunch")
     #expect(block != nil)
-    #expect(block?.subline?.contains("usual time is busy") == true)
+    #expect(block!.start >= at(13, 30))            // after the session that sat on it
+    #expect(block?.subline?.contains("Later than usual") == true)
 }
 
-@Test func readingTakesTheLargestGapAndNotTheMorning() {
-    let reading = IntermissionKind.defaults.first { $0.id == "reading" }!
+/// An afternoon break of Carl's own, standing in for the reading that used
+/// to be one. Reading is a weekly goal now and is never placed by itself.
+private var afternoonBreak: IntermissionKind {
+    IntermissionKind(
+        id: "tea", name: "Tea", minutes: 30, cadence: .daily,
+        preference: .afternoon, deskRule: .down
+    )
+}
+
+@Test func anAfternoonBreakTakesTheLargestGapAndNotTheMorning() {
+    let reading = afternoonBreak
     let plan = planner([reading]).plan(
         sessions: [session(10, to: 10, 50), session(13, to: 13, 20), session(16, to: 16, 50)],
         on: at(9)
     )
-    // Biggest gap is 11:00-13:00, but reading is an afternoon habit, so it
-    // takes the back of that gap rather than late morning.
-    let block = intermission(plan, "reading")
+    // Biggest gap is 11:00-13:00, but it's an afternoon habit, so it takes
+    // the back of that gap rather than late morning.
+    let block = intermission(plan, "tea")
     #expect(block != nil)
     #expect(block!.start >= at(12), "reading should not land in the morning; got \(block!.start)")
     #expect(block!.end <= at(16))
 }
 
-@Test func readingMovesToAnotherGapWhenTheBigOneIsTaken() {
-    let reading = IntermissionKind.defaults.first { $0.id == "reading" }!
+@Test func anAfternoonBreakMovesToAnotherGapWhenTheBigOneIsTaken() {
+    let reading = afternoonBreak
     let plan = planner([reading]).plan(
         sessions: [session(10, to: 13, 20), session(16, to: 16, 50)],
         on: at(9)
     )
-    let block = intermission(plan, "reading")!
+    let block = intermission(plan, "tea")!
     #expect(block.start >= at(13, 30))      // after the long session and its note
     #expect(block.end <= at(16))
 }
 
-@Test func aWeeklyIntermissionOnlyAppearsOnItsDay() {
-    let call = IntermissionKind.defaults.first { $0.id == "call" }!   // Thursday
+@Test func aSomeDaysIntermissionOnlyAppearsOnThoseDays() {
+    let call = IntermissionKind.defaults.first { $0.id == "call" }!   // Mon, Wed, Fri
     let tuesday = planner([call]).plan(sessions: fullDay(), on: at(9))
-    let thursday = planner([call]).plan(
-        sessions: [session(10, to: 10, 50, day: 24), session(16, to: 16, 50, day: 24)],
-        on: at(9, day: 24)
+    let wednesday = planner([call]).plan(
+        sessions: [session(10, to: 10, 50, day: 23), session(16, to: 16, 50, day: 23)],
+        on: at(9, day: 23)
     )
     #expect(intermission(tuesday, "call") == nil)
-    #expect(intermission(thursday, "call") != nil)
+    #expect(intermission(wednesday, "call") != nil)
 }
 
 @Test func aDisabledIntermissionIsNeverPlaced() {
@@ -145,9 +155,10 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
         sessions: [session(10, to: 10, 50), session(14, to: 14, 50, virtual: true)],
         on: at(9)
     )
-    let block = intermission(plan, "stretch")
-    #expect(block?.end == at(13, 50))       // ten minutes clear of the session
-    #expect(block?.subline == "Before a seated session")
+    let stretches = plan.filter { $0.kind == .intermission(id: "stretch") }
+    let beforeSeated = stretches.first { $0.subline?.hasPrefix("Before a seated session") == true }
+    #expect(beforeSeated?.end == at(13, 50))       // ten minutes clear of the session
+    #expect(beforeSeated?.subline?.contains("desk stays where it is") == true)
 }
 
 @Test func calendarEventsAreFixedAndBlockGaps() {
@@ -250,7 +261,7 @@ private func intermission(_ plan: [PlanBlock], _ id: String) -> PlanBlock? {
 @Test func withoutConfiguredWindowsTheWholeDayIsAvailable() {
     let lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
     let plan = planner([lunch]).plan(sessions: fullDay(), on: at(9), workingWindows: [])
-    #expect(intermission(plan, "lunch")?.start == at(12, 30))
+    #expect(intermission(plan, "lunch")?.start == at(12))
 }
 
 
@@ -317,5 +328,8 @@ private func packed(_ sessions: [PublishedSession], _ kinds: [IntermissionKind])
         sessions: [session(10, to: 10, 50), session(14, to: 14, 50, virtual: true)],
         on: at(9)
     )
-    #expect(intermission(plan, "stretch")?.end == at(14))    // right up to the hour
+    let beforeSeated = plan
+        .filter { $0.kind == .intermission(id: "stretch") }
+        .first { $0.subline?.hasPrefix("Before a seated session") == true }
+    #expect(beforeSeated?.end == at(14))                     // right up to the hour
 }

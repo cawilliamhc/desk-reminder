@@ -150,7 +150,11 @@ struct NowCard: View {
             [Action(title: "I'm back", shortcut: .return) { model.finishIntermission(kind.id) }]
         case .note:
             [Action(title: "Done", shortcut: .return) { model.noteDone() }]
-        case .session, .open:
+        case .session:
+            // The phase moves on by itself when the published hour ends;
+            // this is for the hour that ended early.
+            [Action(title: "Skip ahead", shortcut: .return) { model.endSessionEarly() }]
+        case .open:
             []
         }
     }

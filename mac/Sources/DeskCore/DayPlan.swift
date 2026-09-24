@@ -2,9 +2,29 @@ import Foundation
 
 /// What Carl changed about a day's plan. The suggestions are the app's; these
 /// are his, and they outlive a reshuffle.
-public struct PlanEdit: Codable, Equatable, Sendable {
+public struct PlanEdit: Equatable, Sendable {
+    /// What the edit is about.
+    ///
+    /// It used to be an intermission id and nothing else, which is why a
+    /// session that didn't happen had no way of being said: the only editable
+    /// things on the plan were the ones the app had suggested.
+    public enum Target: Codable, Equatable, Hashable, Sendable {
+        case intermission(String)
+        /// Keyed on the start time, because that's what Practice Studio
+        /// publishes and what survives a re-read of sessions.json. If the
+        /// session moves, the edit stops matching - which is right: the day
+        /// has changed, and the rebalance banner says so.
+        case session(start: Date)
+        case event(start: Date, title: String)
+    }
+
     public enum Change: Codable, Equatable, Sendable {
+        // Intermissions
         case moved(to: Date)
+        /// Where the planner put it when the day was committed. Not Carl's
+        /// choice, but his agreement: from then on the block stays there
+        /// rather than being laid out again every time the day changes.
+        case pinned(to: Date)
         case skipped
         /// Use a different intermission in this one's slot.
         case swapped(for: String)
@@ -12,14 +32,59 @@ public struct PlanEdit: Codable, Equatable, Sendable {
         case added(name: String, minutes: Int, at: Date)
         /// Longer or shorter than usual, just for this day.
         case resized(minutes: Int)
+
+        // Sessions and calendar events, today only
+        case didNotHappen
+        case endedEarly(minutes: Int)
+        /// In person or virtual, when the published modality is wrong.
+        case mode(String)
+        /// No note window after this one.
+        case skipNote
+        /// Whether he's at the computer during a calendar event.
+        case presence(onComputer: Bool)
     }
 
-    public var intermissionID: String
+    public var target: Target
     public var change: Change
 
-    public init(intermissionID: String, change: Change) {
-        self.intermissionID = intermissionID
+    public init(target: Target, change: Change) {
+        self.target = target
         self.change = change
+    }
+
+    public init(intermissionID: String, change: Change) {
+        self.init(target: .intermission(intermissionID), change: change)
+    }
+
+    /// The intermission this is about, when it is about one.
+    public var intermissionID: String? {
+        if case .intermission(let id) = target { return id }
+        return nil
+    }
+
+    public var isAboutFixedBlock: Bool { intermissionID == nil }
+}
+
+extension PlanEdit: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case target, change, intermissionID
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        change = try container.decode(Change.self, forKey: .change)
+        if let target = try container.decodeIfPresent(Target.self, forKey: .target) {
+            self.target = target
+        } else {
+            // A plan saved before fixed blocks could be edited.
+            self.target = .intermission(try container.decode(String.self, forKey: .intermissionID))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(target, forKey: .target)
+        try container.encode(change, forKey: .change)
     }
 }
 
@@ -34,8 +99,24 @@ public struct DayPlan: Codable, Equatable, Sendable {
     /// The sessions as they were when this was planned. A mismatch later is
     /// how the app knows to say "this was made before the 2:00 moved".
     public var scheduleSignature: String = ""
+    /// Rebalances already offered for this day, by what opened the time, so
+    /// the same banner doesn't come back every tick.
+    public var settledRebalances: Set<String> = []
 
     public init(day: Date) { self.day = day }
+
+    /// Forgiving, like Settings: a plans.json written before rebalances were
+    /// remembered is still a file full of Carl's edits, and dropping it
+    /// because of one missing key would throw those away.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        day = try c.decode(Date.self, forKey: .day)
+        edits = c.value(.edits, or: [])
+        committedAt = try? c.decodeIfPresent(Date.self, forKey: .committedAt)
+        promptedAt = try? c.decodeIfPresent(Date.self, forKey: .promptedAt)
+        scheduleSignature = c.value(.scheduleSignature, or: "")
+        settledRebalances = c.value(.settledRebalances, or: [])
+    }
 
     /// Records a change, dropping any it contradicts.
     ///
@@ -45,15 +126,27 @@ public struct DayPlan: Codable, Equatable, Sendable {
     /// chose.
     public mutating func apply(_ edit: PlanEdit) {
         var kept = edits.filter { existing in
-            guard existing.intermissionID == edit.intermissionID else { return true }
+            guard existing.target == edit.target else { return true }
             return !(sameSort(existing.change, edit.change) || contradicts(existing.change, edit.change))
         }
         kept.append(edit)
         edits = kept
     }
 
+    public mutating func clearEdits(for target: PlanEdit.Target) {
+        edits.removeAll { $0.target == target }
+    }
+
     public mutating func clearEdits(for intermissionID: String) {
-        edits.removeAll { $0.intermissionID == intermissionID }
+        clearEdits(for: .intermission(intermissionID))
+    }
+
+    public mutating func remove(_ edits: [PlanEdit]) {
+        self.edits.removeAll { edit in edits.contains(edit) }
+    }
+
+    public func edits(for target: PlanEdit.Target) -> [PlanEdit] {
+        edits.filter { $0.target == target }
     }
 
     private func contradicts(_ a: PlanEdit.Change, _ b: PlanEdit.Change) -> Bool {
@@ -61,15 +154,22 @@ public struct DayPlan: Codable, Equatable, Sendable {
         case (.skipped, .moved), (.moved, .skipped),
              (.skipped, .swapped), (.swapped, .skipped),
              (.moved, .swapped), (.swapped, .moved),
-             (.skipped, .resized), (.resized, .skipped): true
+             (.skipped, .resized), (.resized, .skipped),
+             (.pinned, .moved), (.moved, .pinned),
+             (.pinned, .skipped), (.skipped, .pinned),
+             (.pinned, .swapped), (.swapped, .pinned),
+             // A session either didn't happen or ended early. Not both.
+             (.didNotHappen, .endedEarly), (.endedEarly, .didNotHappen): true
         default: false
         }
     }
 
     private func sameSort(_ a: PlanEdit.Change, _ b: PlanEdit.Change) -> Bool {
         switch (a, b) {
-        case (.moved, .moved), (.skipped, .skipped), (.swapped, .swapped),
-             (.added, .added), (.resized, .resized): true
+        case (.moved, .moved), (.pinned, .pinned), (.skipped, .skipped), (.swapped, .swapped),
+             (.added, .added), (.resized, .resized),
+             (.didNotHappen, .didNotHappen), (.endedEarly, .endedEarly),
+             (.mode, .mode), (.skipNote, .skipNote), (.presence, .presence): true
         default: false
         }
     }

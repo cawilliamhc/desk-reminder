@@ -13,7 +13,15 @@ struct SidebarView: View {
 
             navItem(
                 .plan, label: "Plan",
-                meta: model.planCommittedAt.map { $0.formatted(date: .omitted, time: .shortened) }
+                // A dot while a rebalance is waiting: the plan has something
+                // to say, and the time it was made is no longer the news.
+                meta: model.rebalance != nil
+                    ? "•"
+                    : model.planCommittedAt.map { $0.formatted(date: .omitted, time: .shortened) }
+            )
+            navItem(
+                .week, label: "Week",
+                meta: model.goalSlotsLeft > 0 ? "\(model.goalSlotsLeft) left" : nil
             )
             navItem(.today, label: "Today", meta: "\(Int((model.today.standingShare * 100).rounded()))%")
             navItem(.settings, label: "Settings", meta: nil)

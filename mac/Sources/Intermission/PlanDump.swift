@@ -29,13 +29,27 @@ enum PlanDump {
         let plans = PlanStore(url: Paths.support.appending(path: "plans.json"))
         let saved = plans[Date()]
         if !saved.edits.isEmpty {
-            print("\nyour edits: " + saved.edits.map { "\($0.intermissionID) \($0.change)" }.joined(separator: ", "))
+            print("\nyour edits: " + saved.edits.map { "\($0.target) \($0.change)" }.joined(separator: ", "))
         }
 
-        let plan = Planner(intermissions: settings.intermissions).plan(
+        let weeks = WeekPlanStore(url: Paths.support.appending(path: "weeks.json"))
+        let slots = weeks[Date()].slots(on: Date())
+        if !slots.isEmpty {
+            print("\ngoals on today: " + slots.map { slot in
+                slot.preferredStart.map { "\($0.formatted(time)) \(slot.goalID)" } ?? slot.goalID
+            }.joined(separator: ", "))
+        }
+
+        let plan = Planner(
+            intermissions: settings.intermissions,
+            settleMinutes: settings.settleMinutes,
+            bufferMinutes: settings.bufferMinutes,
+            calendarEventMode: settings.calendarEventMode
+        ).plan(
             sessions: schedule.sessions,
             on: Date(),
             edits: saved.edits,
+            goalSlots: slots,
             configuredHours: schedule.workingHours(on: Date()),
             workingWindows: windows
         )

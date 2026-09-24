@@ -18,6 +18,7 @@ struct IntermissionApp: App {
                 Group {
                     switch model.selectedView {
                     case .plan: PlanView(model: model)
+                    case .week: WeekView(model: model)
                     case .today: TodayView(model: model)
                     case .settings: SettingsView(model: model)
                     }

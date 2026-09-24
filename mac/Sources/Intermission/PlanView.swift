@@ -8,7 +8,7 @@ struct PlanView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             agenda
-            shape
+            GoalTray(model: model)
         }
         .background(Theme.surface)
     }
@@ -35,9 +35,16 @@ struct PlanView: View {
                     .font(Theme.headline(24))
                     .foregroundStyle(Theme.ink)
                     .lineSpacing(3)
-                Text("Drag a break to move it, drag its bottom edge to make it longer or shorter, or fill an empty stretch.")
+                Text("Daily breaks are placed for you, \(spelledBuffer) apart. Weekly goals wait on the right until you add one.")
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.muted)
+                if let rebalance = model.rebalance {
+                    RebalanceBanner(rebalance: rebalance, model: model)
+                        .padding(.top, 4)
+                } else if let strip = model.rebalanceStrip {
+                    RebalanceStrip(strip: strip, model: model)
+                        .padding(.top, 4)
+                }
                 if model.scheduleMovedSincePlanning {
                     HStack(spacing: 8) {
                         Text("The schedule has changed since you planned this day. Your changes are kept; the rest has been laid out again.")
@@ -70,44 +77,86 @@ struct PlanView: View {
     }
 
     /// The day in a sentence, built from what's actually on the plan.
+    ///
+    /// Two sentences: what's fixed, then what the planner put in. It names at
+    /// most two breaks, because a list of five is something you skim rather
+    /// than read.
     private var summary: String {
+        if let rebalance = model.rebalance {
+            return "\(rebalance.title.split(separator: ".").first.map(String.init) ?? rebalance.title). "
+                + "\(rebalance.minutes) minutes opened up."
+        }
+
         let sessions = model.shownPlan.filter { if case .session = $0.kind { return true } else { return false } }
         let virtual = model.shownPlan.filter { $0.kind == .session(virtual: true) }.count
-        let notes = model.shownPlan.filter { $0.kind == .note }.count
-        let suggestions = model.shownPlan.filter(\.isSuggestion)
+        let placed = model.shownPlan.filter { $0.isSuggestion && !$0.isGoal }.sorted { $0.start < $1.start }
+        let goals = model.shownPlan.filter(\.isGoal).sorted { $0.start < $1.start }
 
-        if sessions.isEmpty && suggestions.isEmpty {
+        if sessions.isEmpty && placed.isEmpty && goals.isEmpty && model.shownEvents.isEmpty {
             return model.planDay == .today ? "Nothing on the books today." : "Nothing on the books tomorrow."
         }
-        var parts: [String] = []
+
+        var sentences: [String] = []
+
+        // What's fixed.
+        var fixed: [String] = []
         if !sessions.isEmpty {
-            let count = sessions.count == 1 ? "One session" : "\(spell(sessions.count)) sessions"
-            parts.append(virtual > 0 ? "\(count), \(spell(virtual)) virtual" : count)
+            let count = sessions.count == 1 ? "One session" : "\(spell(sessions.count, capitalised: true)) sessions"
+            fixed.append(virtual > 0 ? "\(count), \(spell(virtual)) virtual" : count)
         }
-        if !model.shownEvents.isEmpty {
-            parts.append(model.shownEvents.count == 1
-                ? "one thing from your calendar"
-                : "\(spell(model.shownEvents.count)) things from your calendar")
+        for event in model.shownEvents.prefix(2) {
+            let time = event.start.formatted(date: .omitted, time: .shortened)
+            fixed.append("a \(time) \(eventNoun(event.title))")
         }
-        var sentence = parts.joined(separator: ", ") + "."
-        if !suggestions.isEmpty {
-            let placed = suggestions.map { "\($0.title.lowercased()) at \($0.start.formatted(date: .omitted, time: .shortened))" }
-            sentence += " Room for " + list(placed) + "."
+        if model.shownEvents.count > 2 {
+            fixed.append("\(spell(model.shownEvents.count - 2)) more from your calendar")
         }
-        if notes > 0 {
-            sentence += notes == 1 ? " One note standing." : " \(spell(notes)) notes standing."
+        if !fixed.isEmpty { sentences.append(list(fixed) + ".") }
+
+        // What the planner put in.
+        if !placed.isEmpty {
+            let named = placed.prefix(2).enumerated().map { index, block -> String in
+                let name = index == 0 ? block.title : "a \(block.title.lowercased())"
+                return "\(name) at \(block.start.formatted(date: .omitted, time: .shortened))"
+            }
+            var sentence = list(named)
+            if placed.count > 2 { sentence += " and \(placed.count - 2) more" }
+            sentences.append(sentence + (placed.count == 1 ? " is in." : " are in."))
         }
+
         // A silent absence reads as a bug, so say what didn't fit.
         if model.planDay == .today, !model.unplacedToday.isEmpty {
-            let names = list(model.unplacedToday.map { $0.name.lowercased() })
-            sentence += " No room for \(names) today."
+            sentences.append("No room for \(list(model.unplacedToday.map { $0.name.lowercased() })) today.")
         }
-        return sentence
+
+        if goals.isEmpty {
+            sentences.append("The rest stays open.")
+        } else {
+            let named = goals.map {
+                "\($0.title.lowercased()) at \($0.start.formatted(date: .omitted, time: .shortened))"
+            }
+            sentences.append("You added \(list(named)).")
+        }
+        return sentences.joined(separator: " ")
     }
 
-    private func spell(_ n: Int) -> String {
-        ["zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"]
-            .indices.contains(n) ? ["zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"][n] : "\(n)"
+    /// "Call with Dana" is a call. The first word is the one that says what
+    /// a calendar event is; the rest is usually who it's with.
+    private func eventNoun(_ title: String) -> String {
+        let first = title.split(separator: " ").first.map(String.init) ?? "thing"
+        return first.lowercased()
+    }
+
+    private var spelledBuffer: String {
+        let minutes = model.settings.bufferMinutes
+        return minutes == 0 ? "back to back" : "\(spell(minutes)) minutes"
+    }
+
+    private func spell(_ n: Int, capitalised: Bool = false) -> String {
+        let words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+                     "eleven", "twelve", "thirteen", "fourteen", "fifteen"]
+        guard words.indices.contains(n) else { return "\(n)" }
+        return capitalised ? words[n].prefix(1).uppercased() + words[n].dropFirst() : words[n]
     }
 
     private func list(_ items: [String]) -> String {
@@ -115,94 +164,4 @@ struct PlanView: View {
         return items.dropLast().joined(separator: ", ") + " and " + items.last!
     }
 
-    private var shape: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(model.planDay == .today ? "Today's shape" : "Tomorrow's shape")
-                .font(Theme.ui(13, weight: .semibold)).foregroundStyle(Theme.ink)
-
-            VStack(spacing: 6) {
-                ForEach(shapeRows, id: \.label) { row in
-                    HStack(spacing: 8) {
-                        RoundedRectangle(cornerRadius: 2).fill(row.color).frame(width: 8, height: 8)
-                        Text(row.label).font(Theme.ui(12)).foregroundStyle(Theme.ink)
-                        Spacer()
-                        Text(row.value).font(Theme.ui(12)).monospacedDigit().foregroundStyle(Theme.muted)
-                    }
-                }
-            }
-
-            DayStrip(model: model, blocks: model.shownPlan)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(model.planDay == .today ? "Yesterday" : "Today so far")
-                    .font(Theme.ui(13, weight: .semibold)).foregroundStyle(Theme.ink)
-                Text(yesterday).font(Theme.ui(12)).foregroundStyle(Theme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    Text("Streak over goal").font(Theme.ui(12)).foregroundStyle(Theme.ink)
-                    Spacer()
-                    Text("\(model.streak) days").font(Theme.ui(12)).monospacedDigit().foregroundStyle(Theme.muted)
-                }
-            }
-
-            Spacer()
-
-            VStack(spacing: 6) {
-                Button(model.planDay == .today ? "Start the day with this plan" : "Save tomorrow's plan") {
-                    model.commitShownPlan()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity)
-                .keyboardShortcut("s", modifiers: .command)
-
-                Button(model.planDay == .today ? "Skip planning today" : "Leave tomorrow unplanned") {
-                    model.skipPlanning()
-                }
-                .buttonStyle(.borderless)
-                .font(Theme.ui(11))
-                .foregroundStyle(Theme.muted)
-            }
-        }
-        .padding(20)
-        .frame(width: 272)
-        .frame(maxHeight: .infinity)
-        .background(Theme.background)
-        .overlay(alignment: .leading) { Rectangle().fill(Theme.border).frame(width: 1) }
-    }
-
-    private var shapeRows: [(label: String, value: String, color: Color)] {
-        var rows: [(String, String, Color)] = []
-        let sessions = model.shownPlan.filter { if case .session = $0.kind { return true } else { return false } }
-        if !sessions.isEmpty {
-            rows.append(("In session", hoursMinutes(sessions.reduce(0) { $0 + $1.length }), Theme.session))
-        }
-        let notes = model.shownPlan.filter { $0.kind == .note }
-        if !notes.isEmpty {
-            rows.append(("Notes, standing", "\(notes.count) × \(Planner.noteMinutes) min", Theme.standing))
-        }
-        if !model.shownEvents.isEmpty {
-            rows.append(("Calendar", "\(model.shownEvents.count) · \(minutesOnly(model.shownEvents.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }))", Theme.calendar))
-        }
-        for block in model.shownPlan where block.isSuggestion {
-            rows.append((
-                block.title,
-                "\(block.start.formatted(date: .omitted, time: .shortened)) · \(minutesOnly(block.length))",
-                model.color(for: block.kind)
-            ))
-        }
-        let open = model.shownPlan.filter { $0.kind == .open }.reduce(0) { $0 + $1.length }
-        if open > 0 { rows.append(("Open", hoursMinutes(open), Theme.border)) }
-        return rows.map { (label: $0.0, value: $0.1, color: $0.2) }
-    }
-
-    private var yesterday: String {
-        let record = model.planDay == .today ? model.week.dropLast().last : model.week.last
-        guard let record, record.isRecorded else {
-            return "No desk time recorded — the app wasn't watching."
-        }
-        return "Stood \(Int((record.standingShare * 100).rounded()))% of \(hoursMinutes(record.atDesk)) at the desk, \(record.notesStanding) of \(record.notesTotal) notes standing."
-    }
 }

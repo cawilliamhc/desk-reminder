@@ -9,13 +9,40 @@ enum Theme {
     static let primary = Color(hex: 0x3f6b52)
     static let border = Color(hex: 0xdcd5c9)
 
-    /// The palette an intermission is coloured from.
+    /// The palette an intermission is coloured from, in five families.
+    ///
+    /// Grouping them is what makes sixteen colours usable: "the green-ish one
+    /// for stretching, the warm one for lunch" is how Carl reaches for a
+    /// colour, not "desk-7". Three tokens are reserved and never offered -
+    /// green means standing, terracotta means the calendar, blue means a
+    /// session - so a break can never be mistaken for one of those.
+    struct ColorFamily: Identifiable, Sendable {
+        var id: String { name }
+        var name: String
+        var hint: String
+        var tokens: [String]
+    }
+
+    static let families: [ColorFamily] = [
+        ColorFamily(name: "Move", hint: "Stretch, walks, body",
+                    tokens: ["desk-1", "desk-9", "desk-7", "desk-6"]),
+        ColorFamily(name: "Nourish", hint: "Lunch, water, coffee",
+                    tokens: ["chart-8", "desk-10", "desk-5", "desk-8"]),
+        ColorFamily(name: "Focus", hint: "Writing, deep work",
+                    tokens: ["desk-3", "desk-11", "chart-6", "desk-12"]),
+        ColorFamily(name: "Unwind", hint: "Reading, eyes off screens",
+                    tokens: ["chart-3", "desk-13", "desk-14", "desk-15"]),
+        ColorFamily(name: "Connect", hint: "Calls, people",
+                    tokens: ["chart-7", "desk-16", "chart-5", "desk-4"]),
+    ]
+
+    /// Every token the app can draw, families and reserved alike.
     ///
     /// The first eight are Practice Studio's own chart tokens
     /// (client/src/index.css, light mode). The rest are new, but written to
     /// the same recipe - muted, mid-lightness, spread around the wheel - so
-    /// a list of sixteen still looks like one family rather than eight
-    /// tokens and eight strangers.
+    /// a list of them still looks like one family rather than eight tokens
+    /// and eight strangers.
     static let palette: [(token: String, name: String, color: Color)] = [
         ("chart-1", "Green", Color(h: 145, s: 20, l: 42)),
         ("chart-2", "Terracotta", Color(h: 14, s: 45, l: 52)),
@@ -26,6 +53,8 @@ enum Theme {
         ("chart-7", "Rose", Color(h: 340, s: 40, l: 55)),
         ("chart-8", "Amber", Color(h: 28, s: 70, l: 50)),
         ("desk-1", "Teal", Color(h: 175, s: 30, l: 40)),
+        // Sky is too close to session blue to offer, but a colour Carl chose
+        // before doesn't get taken off him, so it stays here to be drawn.
         ("desk-2", "Sky", Color(h: 196, s: 42, l: 60)),
         ("desk-3", "Indigo", Color(h: 232, s: 34, l: 52)),
         ("desk-4", "Plum", Color(h: 286, s: 26, l: 45)),
@@ -33,10 +62,28 @@ enum Theme {
         ("desk-6", "Olive", Color(h: 74, s: 32, l: 40)),
         ("desk-7", "Moss", Color(h: 112, s: 24, l: 46)),
         ("desk-8", "Clay", Color(h: 22, s: 34, l: 46)),
+        ("desk-9", "Sea", Color(h: 160, s: 26, l: 50)),
+        ("desk-10", "Apricot", Color(h: 34, s: 60, l: 62)),
+        ("desk-11", "Periwinkle", Color(h: 240, s: 30, l: 65)),
+        ("desk-12", "Slate", Color(h: 215, s: 16, l: 42)),
+        ("desk-13", "Straw", Color(h: 52, s: 40, l: 50)),
+        ("desk-14", "Sand", Color(h: 40, s: 28, l: 62)),
+        ("desk-15", "Bronze", Color(h: 30, s: 38, l: 40)),
+        ("desk-16", "Berry", Color(h: 325, s: 34, l: 44)),
     ]
 
     static func color(token: String) -> Color {
         palette.first { $0.token == token }?.color ?? primary
+    }
+
+    static func name(token: String) -> String {
+        palette.first { $0.token == token }?.name ?? "Colour"
+    }
+
+    /// Which family a colour belongs to, worked out from the token rather
+    /// than stored: one fact in one place.
+    static func family(for token: String) -> ColorFamily? {
+        families.first { $0.tokens.contains(token) }
     }
 
     static let standing = Color(hex: 0x568168)         // chart-1

@@ -59,10 +59,11 @@ public struct CoachCopy: Sendable {
             }
         case .newStreak(let days, let best):
             let tail = days >= best ? "That's a new best." : "Your best is \(best)."
+            let plural = days == 1 ? "day" : "days"
             return switch tone {
-            case .dry: "\(days) days over goal. \(tail)"
-            case .warm: "\(days) days over the line in a row. \(tail)"
-            case .playful: "\(days) days over the line. \(tail) Tomorrow decides it."
+            case .dry: "\(days) \(plural) over goal. \(tail)"
+            case .warm: "\(days) \(plural) over the line in a row. \(tail)"
+            case .playful: "\(days) \(plural) over the line. \(tail) Tomorrow decides it."
             }
         case .intermissionDue(let name, let minutes, let shortened):
             let lower = name.lowercased()
