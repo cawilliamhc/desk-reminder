@@ -75,7 +75,7 @@ struct PlanTimeline: View {
     private var hourLines: some View {
         ForEach(hours, id: \.self) { hour in
             HStack(spacing: 8) {
-                Text(hour.formatted(.dateTime.hour()))
+                Text(clockTime(hour))
                     .font(Theme.ui(10))
                     .monospacedDigit()
                     .foregroundStyle(Theme.muted)
@@ -116,7 +116,10 @@ struct OpenSpace: View {
 
     /// The goal with the most left to do this week that would fit here.
     private var goalOnOffer: IntermissionKind? {
-        guard model.rebalance == nil else { return nil }      // the banner owns this gap
+        guard model.rebalance == nil,                          // the banner owns this gap
+              model.isWorkingDay(model.shownDate),
+              block.end > model.now
+        else { return nil }
         let remaining = model.goalsRemaining
         let onToday = Set(model.shownPlan.compactMap { $0.isGoal ? $0.intermissionID : nil })
         return model.goals
@@ -146,7 +149,7 @@ struct OpenSpace: View {
                             Button {
                                 model.placeGoal(goal.id, on: model.shownDate, at: block.start)
                             } label: {
-                                Text("+ \(goal.name) here")
+                                Text("+ \(goal.name) at \(clockTime(block.start))")
                                     .font(Theme.ui(11))
                                     .foregroundStyle(Theme.ink)
                                     .padding(.horizontal, 9)
@@ -225,7 +228,7 @@ struct TimelineBlock: View {
                             }
                     }
                 }
-                if let subline = block.subline, block.length >= 25 * 60 {
+                if let subline, block.length >= 25 * 60 {
                     Text(subline).font(Theme.ui(10)).foregroundStyle(Theme.muted).lineLimit(1)
                 }
                 if isDraggable, block.length >= 30 * 60, let id = intermissionID {
@@ -299,8 +302,18 @@ struct TimelineBlock: View {
         }
     }
 
+    /// A goal's line leads with where it is in the week, because that's the
+    /// thing it's for: "2 of 3 this week · desk can come down".
+    private var subline: String? {
+        guard block.isGoal, let id = intermissionID else { return block.subline }
+        let progress = model.goalProgress(id)
+        let week = "\(progress.done + progress.planned) of \(progress.target) this week"
+        guard let existing = block.subline, existing != "Weekly goal" else { return week }
+        return "\(week) · \(existing.replacingOccurrences(of: "Weekly goal · ", with: ""))"
+    }
+
     private var times: String {
-        "\(block.start.formatted(date: .omitted, time: .shortened)) – \(block.end.formatted(date: .omitted, time: .shortened))"
+        "\(clockTime(block.start)) – \(clockTime(block.end))"
     }
 
     private var isDraggable: Bool { intermissionID != nil }
@@ -376,9 +389,7 @@ struct TimelineBlock: View {
         if resizeMinutes != 0 {
             return "\(max(5, Int(block.length / 60) + resizeMinutes)) min"
         }
-        return block.start
-            .addingTimeInterval(TimeInterval(dragMinutes * 60))
-            .formatted(date: .omitted, time: .shortened)
+        return clockTime(block.start.addingTimeInterval(TimeInterval(dragMinutes * 60)))
     }
 
     private func snapped(_ translation: CGFloat) -> Int {

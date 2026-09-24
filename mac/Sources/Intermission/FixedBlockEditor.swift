@@ -21,8 +21,8 @@ struct FixedBlockEditor: View {
                     .font(Theme.ui(13, weight: .medium))
                     .foregroundStyle(Theme.ink)
                 Text(isSession
-                     ? "From Practice Studio, which stays the source. This changes today's plan only."
-                     : "Personal calendar, read-only. This changes today's plan only.")
+                     ? "From Practice Studio, which stays the source. This changes \(dayWord)'s plan only."
+                     : "Personal calendar, read-only. This changes \(dayWord)'s plan only.")
                     .font(Theme.ui(11))
                     .foregroundStyle(Theme.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -97,9 +97,10 @@ struct FixedBlockEditor: View {
         return false
     }
 
+    private var dayWord: String { model.planDay == .today ? "today" : "tomorrow" }
+
     private var times: String {
-        "\(block.start.formatted(date: .omitted, time: .shortened))"
-            + "–\(block.end.formatted(date: .omitted, time: .shortened))"
+        "\(clockTime(block.start))–\(clockTime(block.end))"
     }
 
     private func labelled<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {

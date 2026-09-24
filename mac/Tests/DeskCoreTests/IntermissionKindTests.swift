@@ -113,6 +113,9 @@ private func day(_ number: Int) -> Date {
         "rule":"Any gap of 20 min or more."},
        {"cadence":{"twiceDaily":{}},"colorToken":"desk-6","deskRule":"up","enabled":true,
         "id":"custom-walk","minutes":15,"name":"Walk outside","preference":{"afternoon":{}},
+        "rule":"Yours. Placed in a gap that fits it."},
+       {"cadence":{"days":{"_0":[5]}},"colorToken":"chart-6","deskRule":"any","enabled":true,
+        "id":"custom-writing","minutes":20,"name":"Writing","preference":{"afternoon":{}},
         "rule":"Yours. Placed in a gap that fits it."}],
      "listenToDesk":true,"morningPlan":true,"remindForNotes":true,"settleMinutes":10,
      "sound":true,"standingGoal":0.25,"standingThreshold":40.5,"tone":"playful"}
@@ -143,6 +146,14 @@ private func day(_ number: Int) -> Date {
     #expect(reading?.enabled == false)
     #expect(settings.intermissions.first { $0.id == "lunch" }?.colorToken == "chart-8")
     #expect(settings.intermissions.first { $0.id == "writing" } != nil)     // new, and added
+
+    // The Writing he'd made himself becomes the built-in goal, and keeps the
+    // colour he gave it. Two Writings on one screen is one too many.
+    let writings = settings.intermissions.filter { $0.name == "Writing" }
+    #expect(writings.count == 1)
+    #expect(writings.first?.role == .weeklyGoal)
+    #expect(writings.first?.colorToken == "chart-6")
+    #expect(writings.first?.minutes == 45)
 
     // What Carl made himself is untouched.
     let walk = settings.intermissions.first { $0.id == "custom-walk" }

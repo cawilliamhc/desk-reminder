@@ -27,7 +27,11 @@ struct WeekView: View {
 
             HStack(alignment: .top, spacing: 16) {
                 tray
-                grid
+                // Scrolls rather than overflowing: a long day on a short
+                // window is a grid you can move, not a grid that spills.
+                ScrollView(.vertical) {
+                    grid.padding(.bottom, 8)
+                }
             }
             .frame(maxHeight: .infinity, alignment: .top)
         }
@@ -364,7 +368,7 @@ struct WeekBlock: View {
             )
             .overlay(alignment: .topLeading) {
                 if droppable, height >= 14, let goal = selectedGoal {
-                    Text("+ \(goal.name) \(block.start.formatted(date: .omitted, time: .shortened))")
+                    Text("+ \(goal.name) \(clockTime(block.start))")
                         .font(Theme.ui(10))
                         .foregroundStyle(Theme.primary)
                         .padding(.horizontal, 5).padding(.vertical, 2)
@@ -405,8 +409,7 @@ struct WeekBlock: View {
     }
 
     private var tooltip: String {
-        let times = "\(block.start.formatted(date: .omitted, time: .shortened))"
-            + "–\(block.end.formatted(date: .omitted, time: .shortened))"
+        let times = "\(clockTime(block.start))–\(clockTime(block.end))"
         if block.kind == .open {
             guard let goal = selectedGoal, canDrop else {
                 return "\(times) · \(Int(block.length / 60)) min open"

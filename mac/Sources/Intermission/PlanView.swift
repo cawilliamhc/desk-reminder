@@ -73,7 +73,10 @@ struct PlanView: View {
         guard model.planDay == .today else { return "Tomorrow · \(date)" }
         let hour = Calendar.current.component(.hour, from: Date())
         let part = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"
-        return "\(part) · \(date)"
+        // When the day was planned, which is the one fact about the plan
+        // that isn't already on the timeline.
+        let planned = model.planCommittedAt.map { " · \(clockTime($0))" } ?? ""
+        return "\(part) · \(date)\(planned)"
     }
 
     /// The day in a sentence, built from what's actually on the plan.
@@ -105,7 +108,7 @@ struct PlanView: View {
             fixed.append(virtual > 0 ? "\(count), \(spell(virtual)) virtual" : count)
         }
         for event in model.shownEvents.prefix(2) {
-            let time = event.start.formatted(date: .omitted, time: .shortened)
+            let time = clockTime(event.start)
             fixed.append("a \(time) \(eventNoun(event.title))")
         }
         if model.shownEvents.count > 2 {
@@ -117,7 +120,7 @@ struct PlanView: View {
         if !placed.isEmpty {
             let named = placed.prefix(2).enumerated().map { index, block -> String in
                 let name = index == 0 ? block.title : "a \(block.title.lowercased())"
-                return "\(name) at \(block.start.formatted(date: .omitted, time: .shortened))"
+                return "\(name) at \(clockTime(block.start))"
             }
             var sentence = list(named)
             if placed.count > 2 { sentence += " and \(placed.count - 2) more" }
@@ -132,9 +135,7 @@ struct PlanView: View {
         if goals.isEmpty {
             sentences.append("The rest stays open.")
         } else {
-            let named = goals.map {
-                "\($0.title.lowercased()) at \($0.start.formatted(date: .omitted, time: .shortened))"
-            }
+            let named = goals.map { "\($0.title.lowercased()) at \(clockTime($0.start))" }
             sentences.append("You added \(list(named)).")
         }
         return sentences.joined(separator: " ")

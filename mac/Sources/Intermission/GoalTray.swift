@@ -76,6 +76,9 @@ struct GoalTray: View {
         .overlay(alignment: .leading) { Rectangle().fill(Theme.border).frame(width: 1) }
     }
 
+    /// "today" or "tomorrow" - the column follows the day the plan is showing.
+    private var dayWord: String { model.planDay == .today ? "today" : "tomorrow" }
+
     private var standing: String {
         let share = model.weekStandingShare.map { "\(Int(($0 * 100).rounded()))%" } ?? "—"
         return "\(share) · goal \(Int((model.weeklyStandingGoal * 100).rounded()))%"
@@ -101,12 +104,12 @@ struct GoalTray: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if onToday != nil {
-                Button("Take it off today") { model.removeGoal(goal.id, on: model.shownDate) }
+                Button("Take it off \(dayWord)") { model.removeGoal(goal.id, on: model.shownDate) }
                     .buttonStyle(.borderless)
                     .font(Theme.ui(11))
                     .frame(maxWidth: .infinity)
             } else if let fit {
-                Button("Add at \(fit.formatted(date: .omitted, time: .shortened))") {
+                Button("Add at \(clockTime(fit))") {
                     model.placeGoal(goal.id, on: model.shownDate, at: fit)
                 }
                 .controlSize(.small)
@@ -131,13 +134,13 @@ struct GoalTray: View {
         if let onToday {
             let done = model.goalIsDone(onToday)
             let block = model.shownPlan.first { $0.intermissionID == goal.id }
-            guard let block else { return counts + " On today, but the day has no room for it." }
+            guard let block else { return counts + " On \(dayWord), but the day has no room for it." }
             return counts + (done
-                ? " Done at \(block.start.formatted(date: .omitted, time: .shortened))."
-                : " Today at \(block.start.formatted(date: .omitted, time: .shortened)).")
+                ? " Done at \(clockTime(block.start))."
+                : " \(dayWord.capitalized) at \(clockTime(block.start)).")
         }
-        if let fit { return counts + " Fits \(fit.formatted(date: .omitted, time: .shortened)) today." }
-        return counts + " No gap fits today."
+        if let fit { return counts + " Fits \(clockTime(fit)) \(dayWord)." }
+        return counts + " No gap fits \(dayWord)."
     }
 
     private var yesterday: String {

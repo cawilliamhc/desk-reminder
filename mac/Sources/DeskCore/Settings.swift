@@ -92,7 +92,7 @@ public struct Settings: Codable, Equatable, Sendable {
 
     /// The shape of this file. A file written before v4 has no version at
     /// all, which is how the migration below knows to run.
-    public static let currentVersion = 4
+    public static let currentVersion = 5
     public var version: Int = Settings.currentVersion
 
     public init() {}
@@ -136,21 +136,32 @@ public struct Settings: Codable, Equatable, Sendable {
     /// The built-ins are taken as they now are - lunch is amber, reading is a
     /// weekly goal, the call happens on the days he picked - keeping only
     /// whether each was switched on. Anything Carl added himself is left
-    /// exactly as it was.
+    /// exactly as it was, with one exception: a break he'd made that v4 now
+    /// ships as a goal. He had his own Writing, and two of them on the same
+    /// screen is one too many, so the built-in takes over and keeps his
+    /// colour.
     public mutating func migrate() {
         guard version < Self.currentVersion else { return }
+        var mine = intermissions
         var updated: [IntermissionKind] = []
+
         for original in IntermissionKind.defaults {
             var kind = original
-            if let stored = intermissions.first(where: { $0.id == original.id }) {
-                kind.enabled = stored.enabled
+            if let index = mine.firstIndex(where: { $0.id == original.id }) {
+                kind.enabled = mine[index].enabled
+                mine.remove(at: index)
+            }
+            // His own version of the same thing, by name.
+            if let index = mine.firstIndex(where: {
+                $0.name.caseInsensitiveCompare(original.name) == .orderedSame
+            }) {
+                kind.colorToken = mine[index].colorToken
+                mine.remove(at: index)
             }
             updated.append(kind)
         }
-        updated += intermissions.filter { stored in
-            !IntermissionKind.defaults.contains { $0.id == stored.id }
-        }
-        intermissions = updated
+
+        intermissions = updated + mine
         version = Self.currentVersion
     }
 

@@ -152,6 +152,15 @@ extension View {
     }
 }
 
+/// "9:50", "1:00" - the clock without the AM and PM.
+///
+/// His day runs from half nine to six, so there's no hour that could be two
+/// different times, and "9:50 AM – 10:50 AM" spends half a row saying what
+/// everybody already knows.
+func clockTime(_ date: Date) -> String {
+    date.formatted(.dateTime.hour(.defaultDigits(amPM: .omitted)).minute(.twoDigits))
+}
+
 /// Durations read as "1:48" and "46%", never "1.8 hours".
 func hoursMinutes(_ seconds: TimeInterval) -> String {
     let total = Int(seconds.rounded())

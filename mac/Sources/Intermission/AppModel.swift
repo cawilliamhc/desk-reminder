@@ -91,6 +91,9 @@ final class AppModel {
     private var lastSaved = Date.distantPast
     /// The schedule as it was on the last tick, for noticing a change.
     private var lastSignature = ""
+    /// Laid-out days and their calendar events, dropped on every rebuild.
+    private var planCache: [Date: [PlanBlock]] = [:]
+    private var eventCache: [Date: [CalendarEvent]] = [:]
     private var snoozedUntil: Date?
     private var currentDay: Date
 
@@ -128,6 +131,15 @@ final class AppModel {
             notifier.post("Test notification from Intermission.", sound: true)
         }
         notifier.onAction = { [weak self] action in self?.handle(action) }
+        // For checking a screen without clicking through to it.
+        if let name = ProcessInfo.processInfo.environment["INTERMISSION_VIEW"],
+           let view = View(rawValue: name) {
+            selectedView = view
+        }
+        if let day = ProcessInfo.processInfo.environment["INTERMISSION_PLAN_DAY"],
+           let planDay = PlanDay(rawValue: day) {
+            self.planDay = planDay
+        }
         schedule.reload()
         start()
     }
@@ -378,15 +390,17 @@ final class AppModel {
 
     func rebuildPlan() {
         schedule.reload()
+        planCache = [:]
+        eventCache = [:]
         weekPlan = weeks[Date()]
         plan = blocks(for: Date())
-        events = calendars.events(on: Date(), calendarIDs: settings.calendarIDs)
+        events = calendarEvents(on: Date())
 
         unplacedToday = schedule.isDayOff(Date()) ? [] : planner().unplaced(in: plan, on: Date())
 
         let shown = shownDate
         shownPlan = planDay == .today ? plan : blocks(for: shown)
-        shownEvents = planDay == .today ? events : calendars.events(on: shown, calendarIDs: settings.calendarIDs)
+        shownEvents = planDay == .today ? events : calendarEvents(on: shown)
 
         let saved = plans[shown]
         scheduleMovedSincePlanning = saved.committedAt != nil
@@ -406,25 +420,46 @@ final class AppModel {
 
     /// The plan for a day: its sessions and events, the goals Carl has put on
     /// it, and whatever else he's already changed about it.
+    ///
+    /// Cached per day and thrown away whenever anything is rebuilt. Views ask
+    /// for this constantly - the Week grid wants seven days, the goal tray
+    /// asks each goal where it would fit - and every answer used to lay the
+    /// day out again and query the calendar store, once a second.
     func blocks(for day: Date) -> [PlanBlock] {
-        // A day off is a day off: no plan, nothing to nudge about.
-        guard !schedule.isDayOff(day) else { return [] }
-        return planner().plan(
+        let key = Calendar.current.startOfDay(for: day)
+        if let cached = planCache[key] { return cached }
+        // A day off is a day off: no plan, nothing to nudge about. A day
+        // that isn't a desk day counts as one - unless a session turned up
+        // on it, in which case he's working whatever the setting says.
+        let works = !schedule.isDayOff(day)
+            && (settings.isDeskDay(day) || !schedule.sessions(on: day).isEmpty)
+        let blocks = !works ? [] : planner().plan(
             sessions: schedule.sessions,
-            events: calendars.events(on: day, calendarIDs: settings.calendarIDs),
+            events: calendarEvents(on: day),
             on: day,
             edits: plans[day].edits,
             goalSlots: weeks[day].slots(on: day),
             configuredHours: schedule.workingHours(on: day),
             workingWindows: schedule.workingWindows(on: day)
         )
+        planCache[key] = blocks
+        return blocks
+    }
+
+    /// A day's calendar events, read once per rebuild.
+    private func calendarEvents(on day: Date) -> [CalendarEvent] {
+        let key = Calendar.current.startOfDay(for: day)
+        if let cached = eventCache[key] { return cached }
+        let events = calendars.events(on: day, calendarIDs: settings.calendarIDs)
+        eventCache[key] = events
+        return events
     }
 
     /// The hours a day's plan covers, for the timeline and the Week grid.
     func planWindow(for day: Date) -> DateInterval {
         planner().workday(
             sessions: schedule.sessions(on: day),
-            events: calendars.events(on: day, calendarIDs: settings.calendarIDs),
+            events: calendarEvents(on: day),
             on: day,
             configuredHours: schedule.workingHours(on: day)
         )
@@ -438,7 +473,12 @@ final class AppModel {
     /// "Skip planning today": the day runs with no suggestions at all.
     func skipPlanning() {
         for block in shownPlan {
-            if case .intermission(let id) = block.kind { apply(.skipped, to: id) }
+            guard let id = block.intermissionID else { continue }
+            if block.isGoal {
+                removeGoal(id, on: shownDate)
+            } else {
+                apply(.skipped, to: id)
+            }
         }
         if planDay == .today { selectedView = .today }
     }
@@ -480,6 +520,12 @@ final class AppModel {
     /// bottom edge is there to shrink it. Clamping it to fifty and making him
     /// stretch it back was the wrong way round.
     func fill(_ gap: PlanBlock, with kind: IntermissionKind) {
+        // A goal goes on the day through the week's own list, or it wouldn't
+        // count towards the week.
+        if kind.isGoal {
+            placeGoal(kind.id, on: shownDate, at: gap.start)
+            return
+        }
         let minutes = max(5, Int(gap.length / 60))
         if settings.intermissions.contains(where: { $0.id == kind.id }) {
             apply(.moved(to: gap.start), to: kind.id)
@@ -768,13 +814,24 @@ final class AppModel {
 
     /// The hours the grid's rows cover: the widest working day of the week,
     /// so every column lines up on the same clock.
+    /// The hours the grid's rows cover, as a clock range on one day.
+    ///
+    /// It has to be a clock range, not a span of dates: taking the earliest
+    /// start and the latest end across the week gave Monday morning to
+    /// Friday evening, and the grid drew a column four days tall.
     var weekHours: DateInterval {
+        let calendar = Calendar.current
         let windows = weekDays.map { planWindow(for: $0) }
-        guard let first = windows.map(\.start).min(), let last = windows.map(\.end).max() else {
-            let start = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: now)!
-            return DateInterval(start: start, duration: 9 * 3600)
+        func minutes(_ date: Date) -> Int {
+            calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date)
         }
-        return DateInterval(start: first, end: last)
+        let first = windows.map { minutes($0.start) }.min() ?? 9 * 60
+        let last = windows.map { minutes($0.end) }.max() ?? 18 * 60
+        let base = calendar.startOfDay(for: now)
+        return DateInterval(
+            start: base.addingTimeInterval(TimeInterval(first * 60)),
+            end: base.addingTimeInterval(TimeInterval(max(last, first + 120) * 60))
+        )
     }
 
     /// What a day's standing came to, or nil when nothing was recorded.
