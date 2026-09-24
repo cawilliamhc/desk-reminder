@@ -14,6 +14,7 @@ struct WeekView: View {
     /// headline. At this scale a block is a stripe; the readout is what
     /// makes it legible.
     @State private var hovered: String?
+    @State private var isTrayTargeted = false
     private let gutter: CGFloat = 34
     private let headerHeight: CGFloat = 34
     /// Below this a column stops being readable, so the grid scrolls instead.
@@ -79,7 +80,13 @@ struct WeekView: View {
 
     private var tray: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Weekly goals").font(Theme.ui(12, weight: .medium)).foregroundStyle(Theme.ink)
+            HStack {
+                Text("Weekly goals").font(Theme.ui(12, weight: .medium)).foregroundStyle(Theme.ink)
+                Spacer()
+                if isTrayTargeted {
+                    Text("drop to take off").font(Theme.ui(10)).foregroundStyle(Theme.primary)
+                }
+            }
             ForEach(model.goals) { goal in
                 trayCard(goal)
             }
@@ -100,12 +107,18 @@ struct WeekView: View {
         }
         .frame(width: 140)
         .frame(maxHeight: .infinity, alignment: .top)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isTrayTargeted ? Theme.primary.opacity(0.08) : .clear)
+                .padding(-6)
+        )
+        .dropDestination(for: String.self) { payloads, _ in takeOff(payloads) } isTargeted: { isTrayTargeted = $0 }
     }
 
     private var hint: String {
         guard let id = model.selectedGoalID,
               let goal = model.goals.first(where: { $0.id == id })
-        else { return "Pick a goal, then a slot. Hover a block to see what it is." }
+        else { return "Drag a goal onto a slot, or pick one and click. Hover a block to see what it is." }
         return "Now click a slot that fits \(goal.minutes) min. One in the past counts as done."
     }
 
@@ -141,8 +154,17 @@ struct WeekView: View {
         .buttonStyle(.plain)
         .onDrag {
             model.selectedGoalID = goal.id
-            return NSItemProvider(object: goal.id as NSString)
+            return NSItemProvider(object: "goal:\(goal.id)" as NSString)
         }
+    }
+
+    /// Dragging a placed goal back here takes it off the day.
+    private func takeOff(_ payloads: [String]) -> Bool {
+        guard let payload = payloads.first else { return false }
+        let parts = payload.split(separator: ":").map(String.init)
+        guard parts.count == 3, parts[0] == "move", let stamp = TimeInterval(parts[2]) else { return false }
+        model.removeGoal(parts[1], on: Date(timeIntervalSince1970: stamp))
+        return true
     }
 
     // MARK: - Grid
@@ -322,11 +344,29 @@ struct WeekBlock: View {
     @Binding var hovered: String?
 
     @State private var isHovering = false
+    @State private var isTargeted = false
 
     var body: some View {
         content
             .frame(height: max(3, height), alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // The times on the card itself, because that's where the eye
+            // already is. The line under the headline says the rest.
+            .overlay(alignment: .topLeading) {
+                if isHovering, block.kind != .open {
+                    Text("\(clockTime(block.start))–\(clockTime(block.end))")
+                        .font(Theme.ui(10, weight: .medium))
+                        .monospacedDigit()
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Theme.ink)
+                        .foregroundStyle(Theme.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .offset(x: 2, y: height >= 26 ? 14 : -4)
+                        .allowsHitTesting(false)
+                }
+            }
+            .zIndex(isHovering ? 2 : 0)
             .onHover { inside in
                 isHovering = inside
                 if inside {
@@ -336,6 +376,25 @@ struct WeekBlock: View {
                 }
             }
             .help(readout)
+    }
+
+    /// A drop from the tray ("goal:id") or from another slot
+    /// ("move:id:day"). Anything else, or anything that doesn't fit, is
+    /// refused so the drag springs back.
+    private func accept(_ payloads: [String]) -> Bool {
+        guard let payload = payloads.first else { return false }
+        let parts = payload.split(separator: ":").map(String.init)
+        guard parts.count >= 2, let goal = model.goals.first(where: { $0.id == parts[1] }),
+              model.isWorkingDay(day), block.length >= goal.length
+        else { return false }
+        if parts[0] == "move", parts.count == 3, let stamp = TimeInterval(parts[2]) {
+            let from = Date(timeIntervalSince1970: stamp)
+            if !Calendar.current.isDate(from, inSameDayAs: day) { model.removeGoal(goal.id, on: from) }
+        } else if model.goalSlot(goal.id, on: day) != nil {
+            return false                    // already on this day
+        }
+        model.placeGoal(goal.id, on: day, at: block.start)
+        return true
     }
 
     @ViewBuilder
@@ -416,6 +475,11 @@ struct WeekBlock: View {
                     .stroke(colour, lineWidth: isHovering ? 2 : 1.5)
             )
             .overlay(alignment: .topLeading) { label(isDone ? "\(block.title) ✓" : block.title) }
+            .onDrag {
+                NSItemProvider(
+                    object: "move:\(block.intermissionID ?? ""):\(Int(day.timeIntervalSince1970))" as NSString
+                )
+            }
             .onTapGesture {
                 guard let id = block.intermissionID else { return }
                 model.removeGoal(id, on: day)
@@ -433,34 +497,32 @@ struct WeekBlock: View {
     }
 
     private var openSpace: some View {
-        let droppable = canDrop
+        let droppable = canDrop || isTargeted
         return RoundedRectangle(cornerRadius: 3)
             .fill(droppable
-                  ? Theme.primary.opacity(isHovering ? 0.2 : 0.08)
+                  ? Theme.primary.opacity(isHovering || isTargeted ? 0.2 : 0.08)
                   : Theme.ink.opacity(isHovering ? 0.05 : 0))
             .overlay(
                 RoundedRectangle(cornerRadius: 3)
                     .stroke(
                         droppable
-                            ? Theme.primary.opacity(isHovering ? 1 : 0.45)
+                            ? Theme.primary.opacity(isHovering || isTargeted ? 1 : 0.45)
                             : Theme.border.opacity(isHovering ? 1 : 0),
-                        lineWidth: droppable && isHovering ? 1.5 : 1
+                        lineWidth: droppable && (isHovering || isTargeted) ? 1.5 : 1
                     )
             )
             .overlay(alignment: .topLeading) {
-                if droppable, let goal = selectedGoal {
-                    label("+ \(goal.name)", colour: Theme.primary)
+                if let goal = selectedGoal, canDrop {
+                    label("+ \(goal.name) \(clockTime(block.start))", colour: Theme.primary)
+                } else if isTargeted {
+                    label(clockTime(block.start), colour: Theme.primary)
                 } else if isHovering {
-                    label("\(Int(block.length / 60)) min", colour: Theme.muted)
+                    label("\(Int(block.length / 60)) min free", colour: Theme.muted)
                 }
             }
             .contentShape(Rectangle())
             .onTapGesture { place() }
-            .onDrop(of: [.text], isTargeted: nil) { _ in
-                guard droppable else { return false }
-                place()
-                return true
-            }
+            .dropDestination(for: String.self) { payloads, _ in accept(payloads) } isTargeted: { isTargeted = $0 }
             // Putting something in after the fact: the log only knows the
             // breaks he named at the time, and Monday's lunch happened
             // whether or not anybody wrote it down.

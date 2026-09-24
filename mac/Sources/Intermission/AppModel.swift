@@ -403,10 +403,36 @@ final class AppModel {
         shownPlan = planDay == .today ? plan : blocks(for: shown)
         shownEvents = planDay == .today ? events : calendarEvents(on: shown)
 
+        matchSlotsToPlacedGoals()
+
         let saved = plans[shown]
         scheduleMovedSincePlanning = saved.committedAt != nil
             && !saved.scheduleSignature.isEmpty
             && saved.scheduleSignature != schedule.sessions(on: shown).signature
+    }
+
+    /// Keeps the week's list and the day's plan telling the same story.
+    ///
+    /// A goal can reach a day by being dropped in Week, filled into a gap, or
+    /// dragged around the timeline. Only the first of those wrote a slot, so
+    /// the other two left a block on the day that the week's count knew
+    /// nothing about.
+    private func matchSlotsToPlacedGoals() {
+        for day in [currentDay, Calendar.current.date(byAdding: .day, value: 1, to: currentDay)]
+            .compactMap({ $0 }) {
+            var week = weeks[day]
+            var changed = false
+            for block in blocks(for: day) where block.isGoal {
+                guard let id = block.intermissionID, week.slot(for: id, on: day) == nil else { continue }
+                week.place(id, on: day, at: block.start)
+                changed = true
+            }
+            guard changed else { continue }
+            weeks[day] = week
+            weeks.save()
+            planCache.removeValue(forKey: Calendar.current.startOfDay(for: day))
+        }
+        weekPlan = weeks[Date()]
     }
 
     /// The planner, set up from the settings as they are now.
@@ -446,7 +472,7 @@ final class AppModel {
             edits: plans[day].edits,
             goalSlots: weeks[day].slots(on: day),
             placeBreaks: placeBreaks,
-            configuredHours: schedule.workingHours(on: day),
+            configuredHours: dayHours(on: day),
             workingWindows: schedule.workingWindows(on: day)
         )
         planCache[key] = blocks
@@ -512,8 +538,26 @@ final class AppModel {
             sessions: schedule.sessions(on: day),
             events: calendarEvents(on: day),
             on: day,
-            configuredHours: schedule.workingHours(on: day)
+            configuredHours: dayHours(on: day)
         )
+    }
+
+    /// The day on screen: Practice Studio's hours, opened out to the time he
+    /// actually gets in. His first session is at ten and he's at the desk by
+    /// half seven, and a plan that starts at ten is missing the part of the
+    /// morning he can do something about.
+    private func dayHours(on day: Date) -> DateInterval {
+        let calendar = Calendar.current
+        let published = schedule.workingHours(on: day)
+        let opens = calendar.date(
+            bySettingHour: settings.dayStartsMinutes / 60,
+            minute: settings.dayStartsMinutes % 60, second: 0, of: day
+        ) ?? day
+        let closes = published?.end
+            ?? calendar.date(bySettingHour: Planner.dayEndHour, minute: 0, second: 0, of: day)
+            ?? opens.addingTimeInterval(8 * 3600)
+        let start = min(opens, published?.start ?? opens)
+        return DateInterval(start: start, end: max(closes, start.addingTimeInterval(3600)))
     }
 
     var isPlanCommitted: Bool { plans[shownDate].committedAt != nil }
@@ -561,6 +605,16 @@ final class AppModel {
         day.apply(PlanEdit(intermissionID: intermissionID, change: change))
         plans[shownDate] = day
         plans.save()
+        // A goal dragged onto the plan is a goal he did this week, wherever
+        // he put it from. Without this the block sat on the day while the
+        // tray still said none were planned.
+        if case .moved(let start) = change,
+           settings.intermissions.first(where: { $0.id == intermissionID })?.isGoal == true {
+            var week = weeks[shownDate]
+            week.place(intermissionID, on: shownDate, at: start)
+            weeks[shownDate] = week
+            weeks.save()
+        }
         rebuildPlan()
     }
 
@@ -1330,7 +1384,8 @@ final class AppModel {
             || settings.bufferMinutes != old.bufferMinutes
             || settings.calendarEventMode != old.calendarEventMode
             || settings.settleMinutes != old.settleMinutes
-            || settings.deskDays != old.deskDays {
+            || settings.deskDays != old.deskDays
+            || settings.dayStartsMinutes != old.dayStartsMinutes {
             rebuildPlan()
         }
     }

@@ -60,6 +60,19 @@ struct SettingsView: View {
                         .labelsHidden()
                         .frame(width: 150)
                     }
+                    row("The day starts at", "When Plan and Week begin. Your hours decide where things can go.") {
+                        Picker("", selection: $model.settings.dayStartsMinutes) {
+                            ForEach(Array(stride(from: 6 * 60, through: 10 * 60, by: 30)), id: \.self) { minutes in
+                                Text(String(
+                                    format: "%d:%02d",
+                                    minutes / 60 % 12 == 0 ? 12 : minutes / 60 % 12,
+                                    minutes % 60
+                                )).tag(minutes)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 110)
+                    }
                     row("Be back before a session", "Intermissions end this long before the next hour starts.") {
                         Picker("", selection: $model.settings.settleMinutes) {
                             ForEach([0, 5, 10, 15], id: \.self) { Text($0 == 0 ? "No gap" : "\($0) minutes").tag($0) }

@@ -89,6 +89,10 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Skipping something this long or longer offers the freed time back.
     /// Skipping a ten-minute stretch shouldn't start a conversation.
     public var rebalanceAfterSkipMinutes: Int = 30
+    /// When the day starts on screen, in minutes from midnight. Practice
+    /// Studio's hours say when he sees clients; this says when he's about -
+    /// the desk is up at half seven whatever the first session says.
+    public var dayStartsMinutes: Int = 7 * 60 + 30
 
     /// The shape of this file. A file written before v4 has no version at
     /// all, which is how the migration below knows to run.
@@ -128,6 +132,7 @@ public struct Settings: Codable, Equatable, Sendable {
         weeklyStandingGoal = try? c.decodeIfPresent(Double.self, forKey: .weeklyStandingGoal)
         calendarEventMode = c.value(.calendarEventMode, or: blank.calendarEventMode)
         rebalanceAfterSkipMinutes = c.value(.rebalanceAfterSkipMinutes, or: blank.rebalanceAfterSkipMinutes)
+        dayStartsMinutes = c.value(.dayStartsMinutes, or: blank.dayStartsMinutes)
         version = c.value(.version, or: 0)
     }
 

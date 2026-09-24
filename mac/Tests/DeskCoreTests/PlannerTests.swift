@@ -333,3 +333,26 @@ private func packed(_ sessions: [PublishedSession], _ kinds: [IntermissionKind])
         .first { $0.subline?.hasPrefix("Before a seated session") == true }
     #expect(beforeSeated?.end == at(14))                     // right up to the hour
 }
+
+@Test func theDayCanStartBeforeTheFirstSessionAsksItTo() {
+    // He's at the desk at half seven; his first client is at ten. The plan
+    // covers the morning he can actually do something about.
+    let window = planner([]).workday(
+        sessions: [session(10, to: 10, 50)],
+        on: at(9),
+        configuredHours: DateInterval(start: at(7, 30), end: at(17))
+    )
+    #expect(window.start == at(7, 30))
+    #expect(window.end == at(17))
+}
+
+@Test func anEarlyStartLeavesRoomToPutSomethingInIt() {
+    let lunch = IntermissionKind.defaults.first { $0.id == "lunch" }!
+    let plan = planner([lunch]).plan(
+        sessions: [session(10, to: 10, 50)],
+        on: at(9),
+        configuredHours: DateInterval(start: at(7, 30), end: at(17))
+    )
+    let open = blocks(plan) { $0 == .open }
+    #expect(open.first?.start == at(7, 30))
+}
