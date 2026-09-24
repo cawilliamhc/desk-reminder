@@ -184,6 +184,7 @@ struct DayLanes: View {
         // and the Planned lane agree about what lunch looks like.
         if label == ComputerLog.sessionLabel { return Theme.session }
         if label == ComputerLog.declinedLabel { return .clear }   // away, and that's all
+        if label == ComputerLog.dayEndLabel { return .clear }     // the office was shut
         guard let kind = model.settings.intermissions.first(where: { $0.name == label }) else {
             return Theme.primary
         }

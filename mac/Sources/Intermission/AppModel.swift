@@ -187,6 +187,14 @@ final class AppModel {
         // Away during a session? That was the session. Named before the
         // prompt looks, so it never asks about a client's hour.
         computer.labelSessions(schedule.sessions(on: currentDay), now: now)
+        // And time away that ran past the end of the day was going home.
+        let published = schedule
+        computer.labelDayEnds(closing: { Self.closeOfBusiness(on: $0, in: published) }, now: now)
+        // A stretch the prompt is already asking about can be claimed by
+        // one of those passes; the question has answered itself.
+        if let asked = breakToLabel, computer.segment(startingAt: asked.start)?.label != nil {
+            breakToLabel = nil
+        }
         if settings.askWhatABreakWas, breakToLabel == nil, present {
             breakToLabel = computer.unlabelledBreaks().first
         }
@@ -596,6 +604,17 @@ final class AppModel {
     /// window to run out. Standing already counted when the desk went up.
     func noteDone() {
         coach.cancel()
+    }
+
+    /// When the office closes on a given day, for deciding that time away
+    /// was the end of it. Nil when availability isn't set up at all - then
+    /// only a night between the leaving and the coming back counts. A day
+    /// with no hours, or a day off, closes before it opens: nothing that
+    /// happens on it is an intermission.
+    private static func closeOfBusiness(on day: Date, in schedule: SessionSchedule) -> Date? {
+        guard !schedule.hours.isEmpty else { return nil }
+        if schedule.isDayOff(day) { return Calendar.current.startOfDay(for: day) }
+        return schedule.workingHours(on: day)?.end ?? Calendar.current.startOfDay(for: day)
     }
 
     func labelBreak(_ segment: ComputerSegment, as label: String) {

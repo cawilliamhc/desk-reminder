@@ -31,6 +31,9 @@ public struct ComputerLog: Codable, Equatable, Sendable {
     /// is settled. Without this the prompt found the same stretch again on
     /// the next tick and asked again, forever.
     public static let declinedLabel = "Not a break"
+    /// He went home. The evening is not a break, and the morning after is
+    /// not the time to ask what he was doing when he left.
+    public static let dayEndLabel = "Away for the day"
 
     public private(set) var segments: [ComputerSegment] = []
 
@@ -102,6 +105,40 @@ public struct ComputerLog: Codable, Equatable, Sendable {
         return named
     }
 
+    /// Names the stretch between leaving for the day and coming back.
+    ///
+    /// Without this the app met Carl on Tuesday morning with "Back after
+    /// 1031 min - what was that?", which is the evening, the night and
+    /// breakfast. A day has an end: time away that runs past the close of
+    /// business, or into another day, is going home, not an intermission.
+    ///
+    /// `closing` gives the moment the working day ends for a given day, or
+    /// nil when there are no hours for it - then only the day boundary
+    /// counts, which is the part that can't be got wrong.
+    @discardableResult
+    public mutating func labelDayEnds(
+        closing: (Date) -> Date?,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Int {
+        var named = 0
+        for index in segments.indices {
+            let segment = segments[index]
+            guard !segment.isOnComputer, segment.label == nil else { continue }
+            let end = segment.end ?? now
+            let overnight = !calendar.isDate(segment.start, inSameDayAs: end)
+            let afterHours = closing(segment.start).map { end >= $0 } ?? false
+            guard overnight || afterHours else { continue }
+            segments[index].label = Self.dayEndLabel
+            named += 1
+        }
+        return named
+    }
+
+    public func segment(startingAt start: Date) -> ComputerSegment? {
+        segments.first { $0.start == start }
+    }
+
     /// Finished off stretches with no label, long enough to be worth asking
     /// about, newest first.
     public func unlabelledBreaks(longerThan minimum: TimeInterval = promptAfter) -> [ComputerSegment] {
@@ -129,6 +166,7 @@ public struct ComputerLog: Codable, Equatable, Sendable {
         segments(on: day, now: now, calendar: calendar)
             .filter { !$0.isOnComputer && $0.label != nil }
             .filter { $0.label != Self.sessionLabel && $0.label != Self.declinedLabel }
+            .filter { $0.label != Self.dayEndLabel }
             .reduce(into: [:]) { totals, segment in
                 totals[segment.label!, default: 0] += segment.duration(now: now)
             }

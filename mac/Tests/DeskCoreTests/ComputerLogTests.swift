@@ -151,3 +151,65 @@ private func session(_ from: Int, _ fromMin: Int, to: Int, _ toMin: Int) -> Publ
     #expect(log.unlabelledBreaks().isEmpty)                                          // never asked again
     #expect(log.labelledBreaks(on: at(9), now: at(12), calendar: calendar).isEmpty)  // and not time off
 }
+
+
+private func nextDay(_ hour: Int, _ minute: Int = 0) -> Date {
+    calendar.date(from: DateComponents(year: 2026, month: 9, day: 23, hour: hour, minute: minute))!
+}
+
+/// Carl's day: the office closes at five.
+private func closes(on day: Date) -> Date? {
+    calendar.date(bySettingHour: 17, minute: 0, second: 0, of: day)
+}
+
+@Test func theNightIsNotABreak() {
+    // "Back after 1031 min - what was that?" on Tuesday morning. It was the
+    // evening, the night, and the drive in.
+    var log = ComputerLog()
+    log.setOnComputer(true, at: at(9))
+    log.setOnComputer(false, at: at(16, 49))
+    log.setOnComputer(true, at: nextDay(10))
+
+    log.labelDayEnds(closing: closes(on:), now: nextDay(10), calendar: calendar)
+    #expect(log.unlabelledBreaks().isEmpty)
+    #expect(log.segments.last { !$0.isOnComputer }?.label == ComputerLog.dayEndLabel)
+    #expect(log.labelledBreaks(on: at(9), now: nextDay(11), calendar: calendar).isEmpty)
+}
+
+@Test func timeAwayThatRunsPastClosingIsGoingHome() {
+    var log = ComputerLog()
+    log.setOnComputer(true, at: at(9))
+    log.setOnComputer(false, at: at(16, 40))     // left at twenty to five
+    log.setOnComputer(true, at: at(19, 30))      // back in the evening
+    log.labelDayEnds(closing: closes(on:), now: at(20), calendar: calendar)
+    #expect(log.unlabelledBreaks().isEmpty)
+}
+
+@Test func aBreakInsideTheWorkingDayIsStillAskedAbout() {
+    var log = ComputerLog()
+    log.setOnComputer(true, at: at(9))
+    log.setOnComputer(false, at: at(12))
+    log.setOnComputer(true, at: at(12, 51))
+    log.labelDayEnds(closing: closes(on:), now: at(13), calendar: calendar)
+    #expect(log.unlabelledBreaks().count == 1)
+}
+
+@Test func aNightWithNoHoursOnFileIsStillANight() {
+    // No availability published: the day boundary is the part that can't be
+    // got wrong, and it's enough.
+    var log = ComputerLog()
+    log.setOnComputer(true, at: at(9))
+    log.setOnComputer(false, at: at(17, 10))
+    log.setOnComputer(true, at: nextDay(9, 40))
+    log.labelDayEnds(closing: { _ in nil }, now: nextDay(10), calendar: calendar)
+    #expect(log.unlabelledBreaks().isEmpty)
+}
+
+@Test func goingHomeDoesNotOverwriteWhatCarlNamed() {
+    var log = ComputerLog()
+    log.setOnComputer(true, at: at(9))
+    log.startBreak(label: "Lunch", at: at(16, 30))
+    log.setOnComputer(true, at: nextDay(9))
+    log.labelDayEnds(closing: closes(on:), now: nextDay(10), calendar: calendar)
+    #expect(log.segments.last { !$0.isOnComputer }?.label == "Lunch")
+}
