@@ -345,6 +345,7 @@ struct WeekBlock: View {
 
     @State private var isHovering = false
     @State private var isTargeted = false
+    @State private var isEditing = false
 
     var body: some View {
         content
@@ -382,17 +383,28 @@ struct WeekBlock: View {
     /// ("move:id:day"). Anything else, or anything that doesn't fit, is
     /// refused so the drag springs back.
     private func accept(_ payloads: [String]) -> Bool {
-        guard let payload = payloads.first else { return false }
+        guard let payload = payloads.first, model.isWorkingDay(day) else { return false }
         let parts = payload.split(separator: ":").map(String.init)
-        guard parts.count >= 2, let goal = model.goals.first(where: { $0.id == parts[1] }),
-              model.isWorkingDay(day), block.length >= goal.length
-        else { return false }
+        guard parts.count >= 2 else { return false }
+        let id = parts[1]
+
+        // Something already on a day, dragged somewhere else. Anything can
+        // move, whether or not it's been and gone: a call that ran at four
+        // rather than three is still a call that happened.
         if parts[0] == "move", parts.count == 3, let stamp = TimeInterval(parts[2]) {
             let from = Date(timeIntervalSince1970: stamp)
-            if !Calendar.current.isDate(from, inSameDayAs: day) { model.removeGoal(goal.id, on: from) }
-        } else if model.goalSlot(goal.id, on: day) != nil {
-            return false                    // already on this day
+            guard let moving = model.weekBlocks(on: from).first(where: { $0.intermissionID == id }),
+                  block.length >= moving.length
+            else { return false }
+            model.move(moving, from: from, to: day, at: block.start)
+            return true
         }
+
+        // A goal from the tray.
+        guard let goal = model.goals.first(where: { $0.id == id }),
+              model.goalSlot(goal.id, on: day) == nil,
+              block.length >= goal.length
+        else { return false }
         model.placeGoal(goal.id, on: day, at: block.start)
         return true
     }
@@ -430,15 +442,7 @@ struct WeekBlock: View {
                     .stroke(isHovering ? Theme.ink.opacity(0.45) : .clear, lineWidth: 1.5)
             )
             .overlay(alignment: .topLeading) { label(shortTitle, colour: labelColour) }
-            .contextMenu {
-                // Sessions and notes come from Practice Studio; a break on a
-                // day is something he can take back off it.
-                if block.isSuggestion, let id = block.intermissionID {
-                    Button("Take it off this day") {
-                        model.clearEdits(for: .intermission(id), on: day)
-                    }
-                }
-            }
+            .modifier(Editable(block: block, day: day, model: model, isEditing: $isEditing))
     }
 
     private var shortTitle: String {
@@ -475,21 +479,7 @@ struct WeekBlock: View {
                     .stroke(colour, lineWidth: isHovering ? 2 : 1.5)
             )
             .overlay(alignment: .topLeading) { label(isDone ? "\(block.title) ✓" : block.title) }
-            .onDrag {
-                NSItemProvider(
-                    object: "move:\(block.intermissionID ?? ""):\(Int(day.timeIntervalSince1970))" as NSString
-                )
-            }
-            .onTapGesture {
-                guard let id = block.intermissionID else { return }
-                model.removeGoal(id, on: day)
-            }
-            .contextMenu {
-                if let id = block.intermissionID {
-                    Button(isDone ? "Mark as not done" : "Mark as done") { model.toggleGoalDone(id, on: day) }
-                    Button("Take it off this day") { model.removeGoal(id, on: day) }
-                }
-            }
+            .modifier(Editable(block: block, day: day, model: model, isEditing: $isEditing))
     }
 
     private var isDone: Bool {
@@ -584,5 +574,51 @@ struct WeekBlock: View {
             parts.append(subline)
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+/// What an intermission on the Week grid can have done to it: picked up and
+/// dropped on another slot, opened for its times, taken off the day.
+///
+/// Everything with an intermission on it gets this, done or not. A stretch
+/// that already happened is exactly the one whose times were wrong.
+private struct Editable: ViewModifier {
+    let block: PlanBlock
+    let day: Date
+    @Bindable var model: AppModel
+    @Binding var isEditing: Bool
+
+    func body(content: Content) -> some View {
+        guard let id = block.intermissionID else { return AnyView(content) }
+        // A block the log produced is a record of where he actually was.
+        // Dragging it somewhere else wouldn't make it true.
+        guard block.badge != "Happened" else {
+            return AnyView(content.contextMenu {
+                Text("From your computer log")
+            })
+        }
+        let isDone = block.isGoal && (model.goalSlot(id, on: day).map { model.goalIsDone($0) } ?? false)
+        return AnyView(
+            content
+                .onDrag { NSItemProvider(object: "move:\(id):\(Int(day.timeIntervalSince1970))" as NSString) }
+                .onTapGesture(count: 2) { isEditing = true }
+                .popover(isPresented: $isEditing, arrowEdge: .trailing) {
+                    IntermissionTimes(block: block, day: day, model: model, isPresented: $isEditing)
+                }
+                .contextMenu {
+                    Button("Edit times…") { isEditing = true }
+                    if block.isGoal {
+                        Button(isDone ? "Mark as not done" : "Mark as done") {
+                            model.toggleGoalDone(id, on: day)
+                        }
+                        Button("Take it off this day") { model.removeGoal(id, on: day) }
+                    } else {
+                        Button("Take it off this day") {
+                            model.clearEdits(for: .intermission(id), on: day)
+                            if !model.isOneOff(id), model.isDeskDay(day) { model.recordSkip(id, on: day) }
+                        }
+                    }
+                }
+        )
     }
 }

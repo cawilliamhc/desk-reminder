@@ -369,15 +369,18 @@ public struct Planner: Sendable {
                   !skipped.contains(kind.id), !edited.contains(kind.id),
                   claim(kind) else { continue }
             let gaps = free()
+            // A goal can be made longer or shorter for a day, the same as a
+            // break: sometimes the writing was twenty minutes.
+            let goalLength = resized[kind.id].map { TimeInterval(max(5, $0) * 60) } ?? kind.length
             let wanted = slot.preferredStart
             // The slot he picked, if the day still has room for it there.
             if let wanted, gaps.contains(where: {
-                $0.start <= wanted && $0.end >= wanted.addingTimeInterval(kind.length)
+                $0.start <= wanted && $0.end >= wanted.addingTimeInterval(goalLength)
             }) {
                 blocks.append(PlanBlock(
                     kind: .intermission(id: kind.id),
                     start: wanted,
-                    end: wanted.addingTimeInterval(kind.length),
+                    end: wanted.addingTimeInterval(goalLength),
                     title: kind.name,
                     subline: subline("Weekly goal", kind),
                     badge: "Weekly goal",
@@ -387,7 +390,7 @@ public struct Planner: Sendable {
                 continue
             }
             guard let (_, best) = place(kind, in: gaps, blocks: blocks, day: day, window: window) else { continue }
-            let length = best.length ?? kind.length
+            let length = resized[kind.id].map { TimeInterval(max(5, $0) * 60) } ?? best.length ?? kind.length
             let moved = wanted != nil && abs(best.start.timeIntervalSince(wanted!)) >= 60
             blocks.append(PlanBlock(
                 kind: .intermission(id: kind.id),

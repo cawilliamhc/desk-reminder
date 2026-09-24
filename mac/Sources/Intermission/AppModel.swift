@@ -832,6 +832,24 @@ final class AppModel {
         rebuildPlan()
     }
 
+    /// Says outright whether a goal happened, rather than toggling.
+    func markGoal(_ id: String, on day: Date, done: Bool?) {
+        var week = weeks[day]
+        week.mark(id, on: day, done: done)
+        weeks[day] = week
+        weeks.save()
+        rebuildPlan()
+    }
+
+    /// Skips a break on a day that isn't the one being shown.
+    func recordSkip(_ id: String, on day: Date) {
+        var saved = plans[day]
+        saved.apply(PlanEdit(intermissionID: id, change: .skipped))
+        plans[day] = saved
+        plans.save()
+        rebuildPlan()
+    }
+
     /// The tick in the tray: says it happened, or says it didn't, whatever
     /// the log thinks.
     func toggleGoalDone(_ id: String, on day: Date) {
@@ -1038,6 +1056,56 @@ final class AppModel {
         plans[day] = saved
         plans.save()
         rebuildPlan()
+    }
+
+    /// Sets when something is and how long it runs, on a given day.
+    ///
+    /// One call for every route: the popover, a drag between days, a resize.
+    /// A goal keeps its slot - and keeps being done, if it was - because
+    /// moving something that happened doesn't unhappen it.
+    func setTimes(_ block: PlanBlock, on day: Date, start: Date, minutes: Int) {
+        guard let id = block.intermissionID else { return }
+        let length = max(5, minutes)
+        var saved = plans[day]
+        if isOneOff(id) {
+            saved.apply(PlanEdit(
+                intermissionID: id,
+                change: .added(name: block.title, minutes: length, at: start)
+            ))
+        } else {
+            saved.apply(PlanEdit(intermissionID: id, change: .moved(to: start)))
+            saved.apply(PlanEdit(intermissionID: id, change: .resized(minutes: length)))
+        }
+        plans[day] = saved
+        plans.save()
+
+        if block.isGoal {
+            let wasDone = goalSlot(id, on: day).map { goalIsDone($0) }
+            var week = weeks[day]
+            week.place(id, on: day, at: start)
+            if wasDone == true { week.mark(id, on: day, done: true) }
+            weeks[day] = week
+            weeks.save()
+        }
+        rebuildPlan()
+    }
+
+    /// Moves a block from one day to another, keeping its length.
+    func move(_ block: PlanBlock, from oldDay: Date, to day: Date, at start: Date) {
+        guard let id = block.intermissionID else { return }
+        let wasDone = block.isGoal ? goalSlot(id, on: oldDay).map { goalIsDone($0) } : nil
+        if !Calendar.current.isDate(oldDay, inSameDayAs: day) {
+            clearEdits(for: .intermission(id), on: oldDay)
+            if block.isGoal { removeGoal(id, on: oldDay) }
+        }
+        setTimes(block, on: day, start: start, minutes: Int(block.length / 60))
+        if wasDone == true {
+            var week = weeks[day]
+            week.mark(id, on: day, done: true)
+            weeks[day] = week
+            weeks.save()
+            rebuildPlan()
+        }
     }
 
     /// Takes something off a particular day, wherever that day is.

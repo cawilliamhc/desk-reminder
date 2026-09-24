@@ -205,6 +205,7 @@ struct TimelineBlock: View {
     @State private var dragMinutes = 0
     @State private var resizeMinutes = 0
     @State private var isEditing = false
+    @State private var isEditingTimes = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -253,7 +254,11 @@ struct TimelineBlock: View {
                             }
                             .buttonStyle(.borderless)
                             .foregroundStyle(Theme.muted)
+                            Button("Edit times") { isEditingTimes = true }
+                                .buttonStyle(.borderless)
                         } else {
+                            Button("Edit times") { isEditingTimes = true }
+                                .buttonStyle(.borderless)
                             Menu("Swap") {
                                 ForEach(model.swapCandidates.filter { $0.id != id }, id: \.id) { kind in
                                     Button(kind.name) { model.apply(.swapped(for: kind.id), to: id) }
@@ -288,8 +293,16 @@ struct TimelineBlock: View {
         .animation(.interactiveSpring, value: dragOffset)
         // Short blocks have no room for buttons, so every block's actions are
         // here too - a ten-minute stretch was impossible to remove otherwise.
+        .popover(isPresented: $isEditingTimes, arrowEdge: .trailing) {
+            IntermissionTimes(
+                block: block, day: model.shownDate, model: model, isPresented: $isEditingTimes
+            )
+        }
+        .onTapGesture(count: 2) { if isDraggable { isEditingTimes = true } }
         .contextMenu {
             if let id = intermissionID {
+                Button("Edit times…") { isEditingTimes = true }
+                Divider()
                 if block.isGoal {
                     Button("Take it off today") { model.removeFromPlan(id) }
                     Button(isGoalDone ? "Mark as not done" : "Mark as done") {

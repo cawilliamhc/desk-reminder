@@ -379,3 +379,17 @@ private var tea: IntermissionKind {
     #expect(placeableStart(length: 45 * 60, in: afternoon, now: at(16, 40), calendar: calendar) == nil)
     #expect(placeableStart(length: 15 * 60, in: afternoon, now: at(16, 40), calendar: calendar) == at(16, 45))
 }
+
+@Test func aGoalCanBeLongerOrShorterForADay() {
+    // "The writing was twenty minutes" - the same edit a break takes.
+    let slot = GoalSlot(goalID: "writing", day: at(0), preferredStart: at(12))
+    let plan = planner().plan(
+        sessions: wideDay(),
+        on: at(9),
+        edits: [PlanEdit(intermissionID: "writing", change: .resized(minutes: 20))],
+        goalSlots: [slot]
+    )
+    let writing = placed(plan, "writing").first
+    #expect(writing?.start == at(12))
+    #expect(writing?.end == at(12, 20))
+}
