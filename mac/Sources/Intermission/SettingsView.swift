@@ -147,6 +147,11 @@ struct SettingsView: View {
                     row("Sound", "Play a sound with reminders.") {
                         Toggle("", isOn: $model.settings.sound).labelsHidden().toggleStyle(.switch)
                     }
+                    row("Silent while you're in session", quietDetail) {
+                        Toggle("", isOn: $model.settings.silentInSession)
+                            .labelsHidden().toggleStyle(.switch)
+                            .disabled(!model.settings.sound)
+                    }
                     row("End-of-day summary", "One notification after the last session.") {
                         Toggle("", isOn: $model.settings.endOfDaySummary).labelsHidden().toggleStyle(.switch)
                     }
@@ -378,6 +383,17 @@ struct SettingsView: View {
         let sessions = model.plan.filter { if case .session = $0.kind { return true } else { return false } }
         let virtual = model.plan.filter { $0.kind == .session(virtual: true) }.count
         return "sessions.json · \(sessions.count) today, \(virtual) virtual · times and modality only"
+    }
+
+    /// Says what the app can see right now, so the setting isn't a promise
+    /// taken on trust.
+    private var quietDetail: String {
+        let base = "The reminder still arrives, without the sound. "
+            + "A session from Practice Studio counts, and so does a live microphone — "
+            + "a Zoom that runs over is still a Zoom."
+        if model.isInCall { return base + " Right now: a microphone is live." }
+        if model.isInSession { return base + " Right now: you're in a session." }
+        return base
     }
 
     private var pauseDetail: String {

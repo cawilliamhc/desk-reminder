@@ -93,6 +93,9 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Studio's hours say when he sees clients; this says when he's about -
     /// the desk is up at half seven whatever the first session says.
     public var dayStartsMinutes: Int = 7 * 60 + 30
+    /// Keep the sound to himself while a session is running. The reminder
+    /// still arrives; it just doesn't make a noise into somebody's hour.
+    public var silentInSession: Bool = true
 
     /// The shape of this file. A file written before v4 has no version at
     /// all, which is how the migration below knows to run.
@@ -133,6 +136,7 @@ public struct Settings: Codable, Equatable, Sendable {
         calendarEventMode = c.value(.calendarEventMode, or: blank.calendarEventMode)
         rebalanceAfterSkipMinutes = c.value(.rebalanceAfterSkipMinutes, or: blank.rebalanceAfterSkipMinutes)
         dayStartsMinutes = c.value(.dayStartsMinutes, or: blank.dayStartsMinutes)
+        silentInSession = c.value(.silentInSession, or: blank.silentInSession)
         version = c.value(.version, or: 0)
     }
 
@@ -173,6 +177,19 @@ public struct Settings: Codable, Equatable, Sendable {
     public func paused(at now: Date) -> Bool {
         guard let until = pausedUntil else { return false }
         return now < until
+    }
+
+    /// Whether a reminder should make a noise.
+    ///
+    /// A notification during a session is still worth having - he sees it
+    /// when he looks - but a sound goes into the room, and into whatever the
+    /// client is in the middle of saying. A live microphone counts as being
+    /// in session whatever the schedule says: the eleven o'clock that's
+    /// still going at ten past twelve is the exact case this is for.
+    public func soundAllowed(inSession: Bool, micInUse: Bool) -> Bool {
+        guard sound else { return false }
+        guard silentInSession else { return true }
+        return !inSession && !micInUse
     }
 
     public func isDeskDay(_ date: Date, calendar: Calendar = .current) -> Bool {

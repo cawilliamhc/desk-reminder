@@ -199,6 +199,10 @@ final class AppModel {
         self.now = now
         rolloverIfNeeded(now)
 
+        // Cheap enough to ask every second: it's a device property, not the
+        // audio itself.
+        isInCall = Microphone.isInUse
+
         let present = presence.isPresent
         if present != isPresent {
             isPresent = present
@@ -362,10 +366,17 @@ final class AppModel {
     private func say(_ message: CoachMessage, category: String = Notifier.category) {
         notifier.post(
             CoachCopy(tone: settings.tone).text(for: message),
-            sound: settings.sound,
+            sound: settings.soundAllowed(inSession: isInSession, micInUse: isInCall),
             category: category
         )
     }
+
+    /// A session is running, as far as Practice Studio knows.
+    var isInSession: Bool { schedule.session(covering: now) != nil }
+
+    /// Something is using a microphone - a call is happening, whether or not
+    /// it's the one in the diary and whether or not it has finished on paper.
+    private(set) var isInCall = false
 
     /// Opens the window on tomorrow's plan - what the evening notification does.
     func showTomorrow() {

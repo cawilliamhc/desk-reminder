@@ -177,3 +177,28 @@ private func day(_ number: Int) -> Date {
     settings.migrate()      // a no-op now
     #expect(settings.intermissions.first { $0.id == "lunch" }?.colorToken == "desk-5")
 }
+
+// MARK: - When a reminder is allowed to make a noise
+
+@Test func aReminderStaysQuietWhileASessionIsRunning() {
+    var settings = Settings()
+    settings.sound = true
+    #expect(settings.soundAllowed(inSession: false, micInUse: false))
+    #expect(!settings.soundAllowed(inSession: true, micInUse: false))
+    // The hour that was booked until twelve and is still going at ten past:
+    // the schedule says it's over, the microphone says otherwise.
+    #expect(!settings.soundAllowed(inSession: false, micInUse: true))
+}
+
+@Test func soundOffMeansOffEitherWay() {
+    var settings = Settings()
+    settings.sound = false
+    #expect(!settings.soundAllowed(inSession: false, micInUse: false))
+}
+
+@Test func theQuietRuleCanBeTurnedOff() {
+    var settings = Settings()
+    settings.sound = true
+    settings.silentInSession = false
+    #expect(settings.soundAllowed(inSession: true, micInUse: true))
+}
