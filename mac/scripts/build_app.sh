@@ -17,8 +17,15 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/Intermission" "$APP/Contents/MacOS/Intermission"
 # GT Ultra rides inside the bundle (ATSApplicationFontsPath) rather than
-# being installed system-wide: the licence covers this app, not the Mac.
-cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
+# being installed system-wide: the licence covers this app, not the Mac. The
+# files aren't in the repo - a licensed font isn't ours to hand out - so a
+# fresh clone builds without them and falls back to the system serif.
+if [ -d Resources/Fonts ]; then
+	cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
+else
+	mkdir -p "$APP/Contents/Resources/Fonts"
+	echo "no Resources/Fonts — headlines will fall back to the system serif"
+fi
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

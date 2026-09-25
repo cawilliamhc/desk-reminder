@@ -3,3 +3,7 @@ __pycache__/
 .pytest_cache/
 .build/
 mac/build/
+
+# GT Ultra is licensed for use in this app, not for handing out. The files
+# live in mac/Resources/Fonts on this Mac; the README says where to get them.
+mac/Resources/Fonts/

@@ -65,10 +65,19 @@ status — to
 `~/Library/Application Support/com.carlwilliamson.practicestudio/desk-reminder/sessions.json`
 (`client/src/lib/sessionEndsExport.ts`). This app never reads the appointments file.
 
+## The font
+
+Headlines are set in GT Ultra Light, which is licensed for use in this app and is
+therefore **not in this repository** — a licensed font isn't mine to hand out. The build
+script looks for `mac/Resources/Fonts/GT-Ultra-Standard-Light.otf` and its italic; with
+the folder missing it builds fine and the headlines fall back to New York, the system
+serif.
+
 ## Data
 
 `~/Library/Application Support/com.carlwilliamson.intermission/`: `days.json` (per-day
-tallies), `settings.json`, `last_height.json`.
+tallies), `plans.json` (a fortnight of plan edits), `weeks.json` (weekly goal slots),
+`logs.json` (desk and computer stretches), `settings.json`, `last_height.json`.
 
 The Python/rumps app this replaced was retired on 22 Sep 2026; its note history was
 migrated into `days.json`, and its old folder (`~/Library/Application Support/desk-reminder/`)
