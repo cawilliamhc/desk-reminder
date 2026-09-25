@@ -91,6 +91,8 @@ final class AppModel {
     private var lastSaved = Date.distantPast
     /// The schedule as it was on the last tick, for noticing a change.
     private var lastSignature = ""
+    /// When the port was last opened or closed, so it can't flap.
+    private var lastPortChange = Date.distantPast
     /// Laid-out days and their calendar events, dropped on every rebuild.
     private var planCache: [Date: [PlanBlock]] = [:]
     private var eventCache: [Date: [CalendarEvent]] = [:]
@@ -171,6 +173,24 @@ final class AppModel {
         self.monitor = monitor
     }
 
+    /// Opens and closes the port around sessions.
+    ///
+    /// The handset wakes up now and then - a click and a lit screen - and
+    /// the likeliest cause is this app's tap sitting on the line the box
+    /// talks to it on. Whatever the cause, a client's hour is the worst time
+    /// for it, and the port is worth almost nothing during one: the desk is
+    /// down, and the box only speaks while the desk moves.
+    ///
+    /// A minute has to pass before it changes its mind again, so a
+    /// microphone that flickers can't turn the port into a metronome.
+    private func followTheSessionWithThePort(_ now: Date) {
+        let wanted = settings.listening(inSession: isInSession, micInUse: isInCall)
+        guard wanted != (monitor != nil) else { return }
+        guard now.timeIntervalSince(lastPortChange) >= 60 else { return }
+        lastPortChange = now
+        wanted ? startListening() : stopListening()
+    }
+
     private func stopListening() {
         monitor?.stop()
         monitor = nil
@@ -202,6 +222,7 @@ final class AppModel {
         // Cheap enough to ask every second: it's a device property, not the
         // audio itself.
         isInCall = Microphone.isInUse
+        followTheSessionWithThePort(now)
 
         let present = presence.isPresent
         if present != isPresent {
@@ -377,6 +398,9 @@ final class AppModel {
     /// Something is using a microphone - a call is happening, whether or not
     /// it's the one in the diary and whether or not it has finished on paper.
     private(set) var isInCall = false
+
+    /// Whether the serial port is open at this moment.
+    var isListening: Bool { monitor != nil }
 
     /// Opens the window on tomorrow's plan - what the evening notification does.
     func showTomorrow() {
@@ -1456,8 +1480,8 @@ final class AppModel {
         timeline.standingThreshold = settings.standingThreshold
         presence.idleThreshold = TimeInterval(settings.idleMinutes * 60)
         settingsStore.save(settings)
-        if settings.listenToDesk != old.listenToDesk {
-            settings.listenToDesk ? startListening() : stopListening()
+        if settings.listenToDesk != old.listenToDesk || settings.closePortInSession != old.closePortInSession {
+            lastPortChange = .distantPast          // a switch he flicked shouldn't wait
         }
         if settings.intermissions != old.intermissions || settings.calendarIDs != old.calendarIDs
             || settings.bufferMinutes != old.bufferMinutes

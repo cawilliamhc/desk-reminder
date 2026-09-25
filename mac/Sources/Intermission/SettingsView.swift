@@ -137,6 +137,11 @@ struct SettingsView: View {
                     row("Listen to the desk", "Off, the port is closed and the height is whatever it last was.") {
                         Toggle("", isOn: $model.settings.listenToDesk).labelsHidden().toggleStyle(.switch)
                     }
+                    row("Close the port during sessions", portDetail) {
+                        Toggle("", isOn: $model.settings.closePortInSession)
+                            .labelsHidden().toggleStyle(.switch)
+                            .disabled(!model.settings.listenToDesk)
+                    }
                     row("Adapter", adapterDetail) { EmptyView() }
                 }
 
@@ -364,6 +369,9 @@ struct SettingsView: View {
     private func fmt(_ value: Double) -> String { String(format: "%.1f", value) }
 
     private var adapterDetail: String {
+        guard model.isListening || !model.settings.listenToDesk else {
+            return "The port is closed while a session is running. It opens again after."
+        }
         var detail = model.adapterStatus.detail
         if let last = model.lastReport {
             detail += " · last report \(Int(Date().timeIntervalSince(last)))s ago"
@@ -383,6 +391,15 @@ struct SettingsView: View {
         let sessions = model.plan.filter { if case .session = $0.kind { return true } else { return false } }
         let virtual = model.plan.filter { $0.kind == .session(virtual: true) }.count
         return "sessions.json · \(sessions.count) today, \(virtual) virtual · times and modality only"
+    }
+
+    /// The port's own line, including whether it's open at this moment.
+    private var portDetail: String {
+        let base = "The handset wakes up now and then; a client's hour is the worst time for it. "
+            + "Almost nothing is lost — the desk is down for a session, and the box only "
+            + "speaks while it moves."
+        guard model.settings.listenToDesk else { return base }
+        return base + (model.isListening ? " Right now: open." : " Right now: closed.")
     }
 
     /// Says what the app can see right now, so the setting isn't a promise

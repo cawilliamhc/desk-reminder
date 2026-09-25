@@ -87,6 +87,11 @@ struct SidebarView: View {
         // "Last known" belongs to the height, not to a separate state: the
         // desk is still up or down, we just haven't seen it move.
         let unconfirmed = model.heightIsAssumed && model.isStanding != nil ? ", last known" : ""
-        return "\(state)\(unconfirmed) · \(model.adapterStatus.label)"
+        // A port closed on purpose isn't a missing adapter, and shouldn't
+        // read like a fault.
+        let line = model.settings.listenToDesk && !model.isListening
+            ? "quiet for this session"
+            : model.adapterStatus.label
+        return "\(state)\(unconfirmed) · \(line)"
     }
 }

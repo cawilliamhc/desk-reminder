@@ -96,6 +96,10 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Keep the sound to himself while a session is running. The reminder
     /// still arrives; it just doesn't make a noise into somebody's hour.
     public var silentInSession: Bool = true
+    /// Close the serial port while a session is running. The handset clicks
+    /// and lights up now and then, and the hour with a client is the worst
+    /// possible time for it.
+    public var closePortInSession: Bool = true
 
     /// The shape of this file. A file written before v4 has no version at
     /// all, which is how the migration below knows to run.
@@ -137,6 +141,7 @@ public struct Settings: Codable, Equatable, Sendable {
         rebalanceAfterSkipMinutes = c.value(.rebalanceAfterSkipMinutes, or: blank.rebalanceAfterSkipMinutes)
         dayStartsMinutes = c.value(.dayStartsMinutes, or: blank.dayStartsMinutes)
         silentInSession = c.value(.silentInSession, or: blank.silentInSession)
+        closePortInSession = c.value(.closePortInSession, or: blank.closePortInSession)
         version = c.value(.version, or: 0)
     }
 
@@ -189,6 +194,19 @@ public struct Settings: Codable, Equatable, Sendable {
     public func soundAllowed(inSession: Bool, micInUse: Bool) -> Bool {
         guard sound else { return false }
         guard silentInSession else { return true }
+        return !inSession && !micInUse
+    }
+
+    /// Whether the app should be holding the serial port open.
+    ///
+    /// Almost nothing is lost by closing it during a session: the desk is
+    /// down for one by definition, and session time is left out of the
+    /// day's totals either way. The box only speaks while the desk moves, so
+    /// a closed port during an hour the desk doesn't move costs no reading
+    /// at all.
+    public func listening(inSession: Bool, micInUse: Bool) -> Bool {
+        guard listenToDesk else { return false }
+        guard closePortInSession else { return true }
         return !inSession && !micInUse
     }
 

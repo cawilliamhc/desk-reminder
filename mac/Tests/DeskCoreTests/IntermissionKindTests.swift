@@ -202,3 +202,23 @@ private func day(_ number: Int) -> Date {
     settings.silentInSession = false
     #expect(settings.soundAllowed(inSession: true, micInUse: true))
 }
+
+// MARK: - When the port is held open
+
+@Test func thePortClosesForASessionAndOpensAfterIt() {
+    var settings = Settings()
+    settings.listenToDesk = true
+    #expect(settings.listening(inSession: false, micInUse: false))
+    #expect(!settings.listening(inSession: true, micInUse: false))
+    #expect(!settings.listening(inSession: false, micInUse: true))
+}
+
+@Test func theMasterSwitchStillWins() {
+    var settings = Settings()
+    settings.listenToDesk = false
+    #expect(!settings.listening(inSession: false, micInUse: false))
+
+    settings.listenToDesk = true
+    settings.closePortInSession = false
+    #expect(settings.listening(inSession: true, micInUse: true))
+}
