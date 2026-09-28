@@ -100,6 +100,11 @@ public struct Settings: Codable, Equatable, Sendable {
     /// and lights up now and then, and the hour with a client is the worst
     /// possible time for it.
     public var closePortInSession: Bool = true
+    /// What colour a calendar event is drawn in, as "#rrggbb". Nil is the
+    /// palette's terracotta. Unlike an intermission's colour this one isn't
+    /// from the sixteen: the calendar is Carl's own furniture, and he can
+    /// have it any colour he likes.
+    public var calendarColor: String?
 
     /// The shape of this file. A file written before v4 has no version at
     /// all, which is how the migration below knows to run.
@@ -142,6 +147,7 @@ public struct Settings: Codable, Equatable, Sendable {
         dayStartsMinutes = c.value(.dayStartsMinutes, or: blank.dayStartsMinutes)
         silentInSession = c.value(.silentInSession, or: blank.silentInSession)
         closePortInSession = c.value(.closePortInSession, or: blank.closePortInSession)
+        calendarColor = try? c.decodeIfPresent(String.self, forKey: .calendarColor)
         version = c.value(.version, or: 0)
     }
 

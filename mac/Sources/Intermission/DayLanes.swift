@@ -36,7 +36,7 @@ struct DayLanes: View {
             }
             lane("Calendar", height: 14) { width in
                 ForEach(model.events, id: \.start) { event in
-                    bar(from: event.start, to: event.end, width: width, color: Theme.calendar,
+                    bar(from: event.start, to: event.end, width: width, color: model.calendarColor,
                         tip: "\(event.title) · \(span(event.start, event.end))")
                 }
             }
@@ -143,18 +143,29 @@ struct DayLanes: View {
         }
     }
 
+    /// The colours actually on the chart, rather than a list written once
+    /// and left: lunch was still mauve here long after it turned amber, and
+    /// reading hasn't been a daily break since v4.
     private var legend: some View {
         HStack(spacing: 10) {
             Spacer().frame(width: 54)
             swatch(Theme.ink.opacity(0.22), "On the computer")
-            swatch(Theme.lunch, "Lunch")
-            swatch(Theme.reading, "Reading")
+            ForEach(namedToday, id: \.label) { swatch($0.color, $0.label) }
             swatch(Theme.standing, "Standing")
             swatch(Theme.sitting, "Sitting")
             swatch(Theme.session, "In session")
+            if !model.events.isEmpty { swatch(model.calendarColor, "Calendar") }
             Spacer()
         }
         .padding(.top, 2)
+    }
+
+    /// The breaks the day actually has a name for, at most three.
+    private var namedToday: [(label: String, color: Color)] {
+        model.breaksToday.keys.sorted().prefix(3).map { name in
+            let kind = model.settings.intermissions.first { $0.name == name }
+            return (name, kind.map { Theme.color(token: $0.colorToken) } ?? Theme.primary)
+        }
     }
 
     private func swatch(_ color: Color, _ label: String) -> some View {

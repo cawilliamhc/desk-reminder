@@ -222,3 +222,20 @@ private func day(_ number: Int) -> Date {
     settings.closePortInSession = false
     #expect(settings.listening(inSession: true, micInUse: true))
 }
+
+// MARK: - The one colour that isn't from the palette
+
+@Test func aCalendarColourIsKeptAndCanBeCleared() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let store = SettingsStore(url: url)
+    var settings = Settings()
+    #expect(settings.calendarColor == nil)          // the palette's terracotta
+
+    settings.calendarColor = "#3A7D8C"
+    store.save(settings)
+    #expect(store.load().calendarColor == "#3A7D8C")
+
+    settings.calendarColor = nil
+    store.save(settings)
+    #expect(store.load().calendarColor == nil)
+}

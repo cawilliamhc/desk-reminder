@@ -465,7 +465,7 @@ struct WeekBlock: View {
         switch block.kind {
         case .session: Theme.session
         case .note: Theme.standing
-        case .calendarEvent: Theme.calendar
+        case .calendarEvent: model.calendarColor
         default: model.color(for: block.kind).opacity(0.55)
         }
     }

@@ -72,6 +72,24 @@ enum Theme {
         ("desk-16", "Berry", Color(h: 325, s: 34, l: 44)),
     ]
 
+    /// "#rrggbb" both ways, for the one colour that isn't from the palette.
+    static func color(hex: String) -> Color? {
+        var text = hex.trimmingCharacters(in: .whitespaces)
+        if text.hasPrefix("#") { text.removeFirst() }
+        guard text.count == 6, let value = UInt32(text, radix: 16) else { return nil }
+        return Color(hex: value)
+    }
+
+    static func hex(_ color: Color) -> String? {
+        guard let srgb = NSColor(color).usingColorSpace(.sRGB) else { return nil }
+        return String(
+            format: "#%02X%02X%02X",
+            Int((srgb.redComponent * 255).rounded()),
+            Int((srgb.greenComponent * 255).rounded()),
+            Int((srgb.blueComponent * 255).rounded())
+        )
+    }
+
     static func color(token: String) -> Color {
         palette.first { $0.token == token }?.color ?? primary
     }

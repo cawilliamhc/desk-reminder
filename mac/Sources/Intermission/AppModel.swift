@@ -792,12 +792,17 @@ final class AppModel {
         apply(.added(name: name, minutes: minutes, at: start), to: "custom-\(UUID().uuidString.prefix(8))")
     }
 
+    /// The colour calendar events are drawn in: his if he's picked one.
+    var calendarColor: Color {
+        settings.calendarColor.flatMap { Theme.color(hex: $0) } ?? Theme.calendar
+    }
+
     /// The colour for a block, with the intermission's own choice honoured.
     func color(for kind: PlanBlock.Kind) -> Color {
         switch kind {
         case .session: Theme.session
         case .note: Theme.standing
-        case .calendarEvent: Theme.calendar
+        case .calendarEvent: calendarColor
         case .open: Theme.border
         case .intermission(let id):
             settings.intermissions.first { $0.id == id }
@@ -1541,6 +1546,7 @@ final class AppModel {
             lastPortChange = .distantPast          // a switch he flicked shouldn't wait
         }
         if settings.intermissions != old.intermissions || settings.calendarIDs != old.calendarIDs
+            || settings.calendarColor != old.calendarColor
             || settings.bufferMinutes != old.bufferMinutes
             || settings.calendarEventMode != old.calendarEventMode
             || settings.settleMinutes != old.settleMinutes

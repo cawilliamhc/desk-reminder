@@ -42,7 +42,7 @@ struct PlanView: View {
                     HStack(spacing: 10) {
                         Image(systemName: "calendar.badge.exclamationmark")
                             .font(.system(size: 12))
-                            .foregroundStyle(Theme.calendar)
+                            .foregroundStyle(model.calendarColor)
                         Text(trouble.text).font(Theme.ui(12)).foregroundStyle(Theme.ink)
                         Spacer(minLength: 8)
                         Button(trouble.action) { model.fixCalendarTrouble() }
@@ -50,7 +50,7 @@ struct PlanView: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
-                    .background(Theme.calendar.opacity(0.12))
+                    .background(model.calendarColor.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: 7))
                     .padding(.top, 4)
                 }

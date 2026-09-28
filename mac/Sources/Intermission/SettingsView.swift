@@ -211,6 +211,18 @@ struct SettingsView: View {
                             Button("Allow access") { Task { await model.calendars.requestAccess(); model.rebuildPlan() } }
                         }
                     }
+                    row("Colour", "How calendar events are drawn on Plan, Week and Today.") {
+                        HStack(spacing: 8) {
+                            ColorPicker("", selection: calendarColorBinding, supportsOpacity: false)
+                                .labelsHidden()
+                            if model.settings.calendarColor != nil {
+                                Button("Reset") { model.settings.calendarColor = nil }
+                                    .buttonStyle(.borderless)
+                                    .font(Theme.ui(11))
+                                    .foregroundStyle(Theme.muted)
+                            }
+                        }
+                    }
                     row(
                         "Treat calendar events as",
                         "Video calls are at the computer; everything else counts as away. "
@@ -360,6 +372,15 @@ struct SettingsView: View {
     }
 
     // MARK: - Odds and ends
+
+    /// The system colour picker writes straight into settings, so the plan
+    /// recolours while the panel is still open.
+    private var calendarColorBinding: Binding<Color> {
+        Binding(
+            get: { model.calendarColor },
+            set: { model.settings.calendarColor = Theme.hex($0) }
+        )
+    }
 
     private var weeklyGoalBinding: Binding<Double> {
         Binding(
