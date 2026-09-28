@@ -127,7 +127,15 @@ public struct SessionSchedule: Sendable {
         return DateInterval(start: first.start, end: last.end)
     }
 
+    /// Time off and holidays, as Practice Studio publishes them.
+    ///
+    /// A day with sessions on it is a working day whatever the list says.
+    /// A half-day training once published a whole Wednesday as closed while
+    /// that Wednesday's five sessions went out beside it, and the day came
+    /// up hatched and unplannable. Practice Studio is the source, but it
+    /// can't be the source of a contradiction.
     public func isDayOff(_ day: Date, calendar: Calendar = .current) -> Bool {
+        guard sessions(on: day, calendar: calendar).isEmpty else { return false }
         let parts = calendar.dateComponents([.year, .month, .day], from: day)
         guard let year = parts.year, let month = parts.month, let date = parts.day else { return false }
         return daysOff.contains(String(format: "%04d-%02d-%02d", year, month, date))

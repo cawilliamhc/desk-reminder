@@ -393,3 +393,25 @@ private var tea: IntermissionKind {
     #expect(writing?.start == at(12))
     #expect(writing?.end == at(12, 20))
 }
+
+// MARK: - A day off with clients on it
+
+@Test func aDayWithSessionsIsNotADayOff() throws {
+    // Practice Studio published a half-day training as a whole Wednesday
+    // off, and five sessions for the same Wednesday.
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let json = """
+    {"sessions":[
+       {"start":"2026-09-30T14:00:00Z","end":"2026-09-30T14:50:00Z","mode":"in-person"}],
+     "hours":[],"daysOff":["2026-09-30","2026-10-02"]}
+    """
+    try json.write(to: url, atomically: true, encoding: .utf8)
+
+    var schedule = SessionSchedule(url: url)
+    schedule.reload()
+
+    let wednesday = calendar.date(from: DateComponents(year: 2026, month: 9, day: 30, hour: 9))!
+    let friday = calendar.date(from: DateComponents(year: 2026, month: 10, day: 2, hour: 9))!
+    #expect(!schedule.isDayOff(wednesday, calendar: calendar))   // he's working it
+    #expect(schedule.isDayOff(friday, calendar: calendar))       // that one is real
+}
