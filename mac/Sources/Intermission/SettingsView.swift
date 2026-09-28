@@ -198,6 +198,14 @@ struct SettingsView: View {
                             }
                             .padding(.bottom, 4)
                         }
+                    } else if model.calendars.isDenied {
+                        row(
+                            "Personal calendars",
+                            "Access is switched off for Intermission. macOS only lets you turn it "
+                                + "back on in System Settings — the app can't ask again."
+                        ) {
+                            Button("Open Privacy settings") { Calendars.openPrivacySettings() }
+                        }
                     } else {
                         row("Personal calendars", "Intermission hasn't been given access yet.") {
                             Button("Allow access") { Task { await model.calendars.requestAccess(); model.rebuildPlan() } }

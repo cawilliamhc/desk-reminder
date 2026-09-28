@@ -22,10 +22,43 @@ struct CalendarInfo: Identifiable, Equatable {
 /// writes one, and only ever takes a title and a time range. Which calendars
 /// are read is Carl's choice, saved in settings.
 @MainActor
+@Observable
 final class Calendars {
     private let store = EKEventStore()
     private(set) var authorized = false
     private(set) var available: [CalendarInfo] = []
+
+    init() {
+        refreshAuthorization()
+    }
+
+    /// What macOS says right now.
+    ///
+    /// This used to be assumed false at every launch, and only a press of
+    /// "Allow access" in Settings ever set it true - so a permission granted
+    /// weeks ago read as missing until Carl went and pressed the button,
+    /// which returned instantly because it had been granted all along. The
+    /// app was asking itself, not the system.
+    func refreshAuthorization() {
+        authorized = Self.status == .fullAccess
+        refreshAvailable()
+    }
+
+    static var status: EKAuthorizationStatus { EKEventStore.authorizationStatus(for: .event) }
+
+    /// Never asked. The system will put up its own prompt, once.
+    var isUndecided: Bool { Self.status == .notDetermined }
+
+    /// Said no, or not allowed to say yes. Only System Settings can undo it.
+    var isDenied: Bool { Self.status == .denied || Self.status == .restricted }
+
+    /// Opens the pane where the switch lives.
+    static func openPrivacySettings() {
+        guard let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"
+        ) else { return }
+        NSWorkspace.shared.open(url)
+    }
 
     func requestAccess() async {
         do {

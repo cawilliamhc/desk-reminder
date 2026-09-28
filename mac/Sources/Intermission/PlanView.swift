@@ -38,6 +38,22 @@ struct PlanView: View {
                 Text(helper)
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.muted)
+                if let trouble = model.calendarTrouble {
+                    HStack(spacing: 10) {
+                        Image(systemName: "calendar.badge.exclamationmark")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.calendar)
+                        Text(trouble.text).font(Theme.ui(12)).foregroundStyle(Theme.ink)
+                        Spacer(minLength: 8)
+                        Button(trouble.action) { model.fixCalendarTrouble() }
+                            .controlSize(.small)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(Theme.calendar.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .padding(.top, 4)
+                }
                 if let rebalance = model.rebalance {
                     RebalanceBanner(rebalance: rebalance, model: model)
                         .padding(.top, 4)

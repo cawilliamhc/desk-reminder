@@ -144,6 +144,63 @@ final class AppModel {
         }
         schedule.reload()
         start()
+        watchCalendars()
+    }
+
+    /// The calendar, at launch and whenever it changes.
+    ///
+    /// Never asked means ask - macOS puts its own prompt up once, and that's
+    /// the whole permission dance. Said-no means say so, which is what
+    /// `calendarTrouble` is for: there's nothing this app can do about a
+    /// switch that lives in System Settings except point at it.
+    private func watchCalendars() {
+        if calendars.isUndecided {
+            Task { @MainActor in
+                await calendars.requestAccess()
+                rebuildPlan()
+            }
+        }
+        // And once, out loud, a few seconds in - long enough for the system
+        // prompt to have been answered. He shouldn't have to open the window
+        // to find out the calendar has fallen off.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard let self, let trouble = self.calendarTrouble else { return }
+            self.notifier.post("\(trouble.text) Open Intermission to put it right.", sound: false)
+        }
+        NotificationCenter.default.addObserver(
+            forName: .EKEventStoreChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.calendars.refreshAuthorization()
+                self?.rebuildPlan()
+            }
+        }
+    }
+
+    /// What's wrong with the calendar, if anything: something to put in front
+    /// of him rather than leave him to find in Settings.
+    var calendarTrouble: (text: String, action: String)? {
+        if calendars.isDenied {
+            return (
+                "Intermission can't see your calendars, so nothing from them is in the plan.",
+                "Open Privacy settings"
+            )
+        }
+        guard calendars.authorized else { return nil }
+        if settings.calendarIDs.isEmpty {
+            return ("No calendars are switched on, so nothing from them is in the plan.", "Choose calendars")
+        }
+        return nil
+    }
+
+    /// The button on that warning.
+    func fixCalendarTrouble() {
+        if calendars.isDenied {
+            Calendars.openPrivacySettings()
+        } else {
+            selectedView = .settings
+        }
     }
 
     var height: Double? { timeline.height }
