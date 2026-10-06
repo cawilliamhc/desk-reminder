@@ -86,6 +86,7 @@ final class AppModel {
     private let settingsStore: SettingsStore
     private let presence = Presence()
     private let notifier = Notifier()
+    private let serialLog = SerialLogFile()
     private var monitor: SerialMonitor?
     private var lastCheck = Date()
     private var lastSaved = Date.distantPast
@@ -218,13 +219,23 @@ final class AppModel {
 
     private func startListening() {
         guard monitor == nil else { return }
+        let log: SerialLogFile? = settings.logSerialTraffic ? serialLog : nil
+        log?.note("port opening")
+
+        var sink: (@Sendable ([UInt8], Date) -> Void)?
+        if let log {
+            sink = { bytes, at in log.bytes(bytes, at: at) }
+        }
+
         let monitor = SerialMonitor(
             onHeight: { [weak self] height, at in
                 Task { @MainActor in self?.heightReported(height, at: at) }
             },
             onStatus: { [weak self] status in
+                log?.note("adapter: \(status.detail)")
                 Task { @MainActor in self?.adapterStatus = status }
-            }
+            },
+            onBytes: sink
         )
         monitor.start()
         self.monitor = monitor
@@ -249,6 +260,9 @@ final class AppModel {
     }
 
     private func stopListening() {
+        if settings.logSerialTraffic, monitor != nil {
+            serialLog.note("port closing\(isInSession ? " — session" : isInCall ? " — microphone live" : "")")
+        }
         monitor?.stop()
         monitor = nil
         adapterStatus = .adapterNotFound
@@ -265,6 +279,7 @@ final class AppModel {
 
     private func heightReported(_ height: Double, at now: Date) {
         lastReport = now
+        if settings.logSerialTraffic { serialLog.note(String(format: "height %.1f\"", height), at: now) }
         timeline.report(height: height, at: now)
         heights.record(standing: height >= settings.standingThreshold, at: now)
         LastHeight.save(height, directory: Self.supportDirectory)
@@ -455,6 +470,19 @@ final class AppModel {
     /// Something is using a microphone - a call is happening, whether or not
     /// it's the one in the diary and whether or not it has finished on paper.
     private(set) var isInCall = false
+
+    var hasSerialLog: Bool { FileManager.default.fileExists(atPath: SerialLogFile.url.path) }
+
+    /// "12 KB so far", for the line under the switch.
+    var serialLogSize: String {
+        let size = (try? FileManager.default.attributesOfItem(atPath: SerialLogFile.url.path)[.size]) as? Int
+        guard let size, size > 0 else { return "Nothing logged yet." }
+        return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file) + " so far."
+    }
+
+    func revealSerialLog() {
+        NSWorkspace.shared.activateFileViewerSelecting([SerialLogFile.url])
+    }
 
     /// Whether the serial port is open at this moment.
     var isListening: Bool { monitor != nil }
@@ -1544,6 +1572,18 @@ final class AppModel {
         settingsStore.save(settings)
         if settings.listenToDesk != old.listenToDesk || settings.closePortInSession != old.closePortInSession {
             lastPortChange = .distantPast          // a switch he flicked shouldn't wait
+        }
+        if settings.logSerialTraffic != old.logSerialTraffic {
+            // The hook is handed to the monitor when it's made, so the port
+            // has to come round again for it to take.
+            stopListening()
+            lastPortChange = .distantPast
+            if settings.logSerialTraffic {
+                serialLog.note("logging on — every byte from here, with the time it arrived")
+            } else {
+                serialLog.note("logging off")
+                serialLog.close()
+            }
         }
         if settings.intermissions != old.intermissions || settings.calendarIDs != old.calendarIDs
             || settings.calendarColor != old.calendarColor

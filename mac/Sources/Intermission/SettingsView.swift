@@ -143,6 +143,16 @@ struct SettingsView: View {
                             .disabled(!model.settings.listenToDesk)
                     }
                     row("Adapter", adapterDetail) { EmptyView() }
+                    row("Log what the desk sends", logDetail) {
+                        HStack(spacing: 8) {
+                            Toggle("", isOn: $model.settings.logSerialTraffic)
+                                .labelsHidden().toggleStyle(.switch)
+                            if model.hasSerialLog {
+                                Button("Show") { model.revealSerialLog() }
+                                    .controlSize(.small)
+                            }
+                        }
+                    }
                 }
 
                 section("Notes", "The ten minutes after each session.") {
@@ -420,6 +430,14 @@ struct SettingsView: View {
         let sessions = model.plan.filter { if case .session = $0.kind { return true } else { return false } }
         let virtual = model.plan.filter { $0.kind == .session(virtual: true) }.count
         return "sessions.json · \(sessions.count) today, \(virtual) virtual · times and modality only"
+    }
+
+    /// What the log is for, and how big it has got.
+    private var logDetail: String {
+        let base = "Every byte that arrives, with the time it arrived, plus when the port "
+            + "opens and closes. For working out what wakes the handset — leave it off otherwise."
+        guard model.settings.logSerialTraffic else { return base }
+        return base + " \(model.serialLogSize)"
     }
 
     /// The port's own line, including whether it's open at this moment.

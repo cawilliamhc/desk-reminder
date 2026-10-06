@@ -42,6 +42,8 @@ public final class SerialMonitor: @unchecked Sendable {
     private let baud: speed_t = 9600
     private let onHeight: @Sendable (Double, Date) -> Void
     private let onStatus: @Sendable (Status) -> Void
+    /// Everything that arrives, when anyone is listening for it.
+    private let onBytes: (@Sendable ([UInt8], Date) -> Void)?
     private let queue = DispatchQueue(label: "desk.serial")
     private let lock = NSLock()
     private var stopped = false
@@ -54,10 +56,12 @@ public final class SerialMonitor: @unchecked Sendable {
 
     public init(
         onHeight: @escaping @Sendable (Double, Date) -> Void,
-        onStatus: @escaping @Sendable (Status) -> Void
+        onStatus: @escaping @Sendable (Status) -> Void,
+        onBytes: (@Sendable ([UInt8], Date) -> Void)? = nil
     ) {
         self.onHeight = onHeight
         self.onStatus = onStatus
+        self.onBytes = onBytes
     }
 
     /// First /dev/cu.usbserial* device, if the adapter is plugged in.
@@ -147,7 +151,9 @@ public final class SerialMonitor: @unchecked Sendable {
             }
             guard n > 0 else { continue }
             let now = Date()
-            for frame in parser.feed(Array(buffer[0..<n])) {
+            let bytes = Array(buffer[0..<n])
+            onBytes?(bytes, now)
+            for frame in parser.feed(bytes) {
                 if let height = frame.height { onHeight(height, now) }
             }
         }

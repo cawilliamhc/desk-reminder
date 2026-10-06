@@ -100,6 +100,9 @@ public struct Settings: Codable, Equatable, Sendable {
     /// and lights up now and then, and the hour with a client is the worst
     /// possible time for it.
     public var closePortInSession: Bool = true
+    /// Write everything the box sends to serial.log, with times. Off by
+    /// default: it's for a question, not for every day.
+    public var logSerialTraffic: Bool = false
     /// What colour a calendar event is drawn in, as "#rrggbb". Nil is the
     /// palette's terracotta. Unlike an intermission's colour this one isn't
     /// from the sixteen: the calendar is Carl's own furniture, and he can
@@ -148,6 +151,7 @@ public struct Settings: Codable, Equatable, Sendable {
         silentInSession = c.value(.silentInSession, or: blank.silentInSession)
         closePortInSession = c.value(.closePortInSession, or: blank.closePortInSession)
         calendarColor = try? c.decodeIfPresent(String.self, forKey: .calendarColor)
+        logSerialTraffic = c.value(.logSerialTraffic, or: blank.logSerialTraffic)
         version = c.value(.version, or: 0)
     }
 
