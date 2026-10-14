@@ -143,6 +143,15 @@ struct SettingsView: View {
                             .disabled(!model.settings.listenToDesk)
                     }
                     row("Adapter", adapterDetail) { EmptyView() }
+                    row("Raise now goes to", raiseDetail) {
+                        Picker("", selection: $model.settings.raiseToHeight) {
+                            ForEach([40.0, 42.0, 43.0, 44.0, 45.0], id: \.self) {
+                                Text("\(fmt($0))″").tag($0)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 110)
+                    }
                     row("Read the desk over", sourceDetail) {
                         Picker("", selection: $model.settings.deskSource) {
                             Text("USB adapter").tag(DeskSource.usb)
@@ -460,6 +469,12 @@ struct SettingsView: View {
             + "opens and closes. For working out what wakes the handset — leave it off otherwise."
         guard model.settings.logSerialTraffic else { return base }
         return base + " \(model.serialLogSize)"
+    }
+
+    /// What the button aims for, and where it actually lets go.
+    private var raiseDetail: String {
+        "Up-pulses stop at \(fmt(model.settings.stopPulsingAt))″ and the desk coasts the rest. "
+            + "Only over Bluetooth, only when you press it — never on a timer."
     }
 
     /// Which source, and why it might matter.

@@ -94,7 +94,8 @@ final class DeskBluetooth: NSObject {
     /// Frames are built, not typed: `F1 F1 cmd len data… checksum 7E`, with
     /// the checksum the sum of everything from cmd to the last data byte.
     /// A frame assembled wrongly is a frame whose meaning nobody knows.
-    func send(command: UInt8, data: [UInt8] = []) {
+    func send(command: UInt8) {
+        let data: [UInt8] = []
         guard let peripheral = listening,
               let characteristic = peripheral.services?
                 .first(where: { $0.uuid == CBUUID(string: "FE60") })?

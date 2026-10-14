@@ -110,16 +110,13 @@ public struct Settings: Codable, Equatable, Sendable {
     /// and lights up now and then, and the hour with a client is the worst
     /// possible time for it.
     public var closePortInSession: Bool = true
-    /// One command byte to send to the box the moment the height stream is
-    /// up, then forgotten. For learning a protocol nobody published, one
-    /// frame at a time, with somebody watching the desk.
-    public var probeCommand: Int?
-    /// The data bytes that go with it, if any.
-    public var probeData: [Int]?
-    /// How many times to repeat it, 150ms apart. Up and down are momentary
-    /// on these controllers: a lone frame is ignored, and the desk stops the
-    /// moment the frames stop.
-    public var probeRepeat: Int?
+    /// Where "Raise now" aims for. The standing threshold is what counts as
+    /// standing; this is where he actually likes to work.
+    public var raiseToHeight: Double = 44.0
+    /// How far the desk carries on after the last up-frame. Measured, not
+    /// guessed: 29.0" to 43.1" overshot a 40" target by three inches, and
+    /// the height reports lag the desk by a fraction of a second on top.
+    public var raiseCoastInches: Double = 2.5
     /// Where the desk's height comes from.
     public var deskSource: DeskSource = .usb
     /// The dongle we found last time, so it doesn't have to be hunted for.
@@ -177,9 +174,8 @@ public struct Settings: Codable, Equatable, Sendable {
         calendarColor = try? c.decodeIfPresent(String.self, forKey: .calendarColor)
         logSerialTraffic = c.value(.logSerialTraffic, or: blank.logSerialTraffic)
         deskSource = c.value(.deskSource, or: blank.deskSource)
-        probeCommand = try? c.decodeIfPresent(Int.self, forKey: .probeCommand)
-        probeData = try? c.decodeIfPresent([Int].self, forKey: .probeData)
-        probeRepeat = try? c.decodeIfPresent(Int.self, forKey: .probeRepeat)
+        raiseToHeight = c.value(.raiseToHeight, or: blank.raiseToHeight)
+        raiseCoastInches = c.value(.raiseCoastInches, or: blank.raiseCoastInches)
         bluetoothDeviceID = try? c.decodeIfPresent(String.self, forKey: .bluetoothDeviceID)
         version = c.value(.version, or: 0)
     }
@@ -222,6 +218,10 @@ public struct Settings: Codable, Equatable, Sendable {
         guard let until = pausedUntil else { return false }
         return now < until
     }
+
+    /// When to stop pulsing, so the desk coasts to the height he wanted
+    /// rather than past it.
+    public var stopPulsingAt: Double { max(standingThreshold, raiseToHeight - raiseCoastInches) }
 
     /// Whether a reminder should make a noise.
     ///

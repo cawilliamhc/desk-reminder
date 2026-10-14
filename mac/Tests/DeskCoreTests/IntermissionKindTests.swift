@@ -277,3 +277,25 @@ private func day(_ number: Int) -> Date {
     let data = Data("14:32:07.145  rx  1 byte  7E\n".utf8)
     #expect(SerialLog.trimmed(data) == data)
 }
+
+// MARK: - Raising the desk
+
+@Test func pulsingStopsEarlyEnoughToCoastToTheRightHeight() {
+    var settings = Settings()
+    settings.standingThreshold = 40
+    settings.raiseToHeight = 44
+    settings.raiseCoastInches = 2.5
+    // 29.0" to 43.1" overshot a 40" target by three inches, so the frames
+    // have to stop before the height he actually wants.
+    #expect(settings.stopPulsingAt == 41.5)
+}
+
+@Test func itNeverLetsGoBelowWhatCountsAsStanding() {
+    var settings = Settings()
+    settings.standingThreshold = 40
+    settings.raiseToHeight = 41          // asked for barely above the threshold
+    settings.raiseCoastInches = 2.5
+    // Coasting from 38.5" would land him short of standing, so the floor
+    // is the threshold itself.
+    #expect(settings.stopPulsingAt == 40)
+}

@@ -238,23 +238,6 @@ final class AppModel {
             bluetooth.rememberDevice = { [weak self] id in
                 Task { @MainActor in self?.settings.bluetoothDeviceID = id.uuidString }
             }
-            // One probe frame, the moment the stream is live, then never
-            // again: the setting clears itself so a frame can't fire twice.
-            bluetooth.onReady = { [weak self] in
-                guard let self, let probe = settings.probeCommand, let command = UInt8(exactly: probe)
-                else { return }
-                let data = (settings.probeData ?? []).compactMap { UInt8(exactly: $0) }
-                let times = max(1, min(settings.probeRepeat ?? 1, 20))   // never more than three seconds
-                settings.probeCommand = nil
-                settings.probeData = nil
-                settings.probeRepeat = nil
-                Task { @MainActor in
-                    for _ in 0..<times {
-                        self.bluetooth.send(command: command, data: data)
-                        try? await Task.sleep(for: .milliseconds(150))
-                    }
-                }
-            }
             bluetooth.listen()
             return
         }
@@ -553,7 +536,7 @@ final class AppModel {
         guard canRaise, !isRaising else { return }
         isRaising = true
         raiseOutcome = nil
-        let target = settings.standingThreshold
+        let target = settings.stopPulsingAt
         let deadline = Date().addingTimeInterval(30)
         var best = height ?? 0
         var movedAt = Date()
@@ -562,7 +545,11 @@ final class AppModel {
             while isRaising {
                 guard Date() < deadline else { raiseOutcome = "Stopped after 30 seconds."; break }
                 guard let now = height else { raiseOutcome = "Stopped — no height coming back."; break }
-                if now >= target { raiseOutcome = String(format: "Up at %.1f\".", now); break }
+                if now >= target {
+                    // Stop here and let it coast the rest of the way.
+                    raiseOutcome = String(format: "Up — let go at %.1f\".", now)
+                    break
+                }
                 if now > best + 0.05 {
                     best = now
                     movedAt = Date()
