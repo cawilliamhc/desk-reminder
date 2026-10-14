@@ -143,6 +143,19 @@ struct SettingsView: View {
                             .disabled(!model.settings.listenToDesk)
                     }
                     row("Adapter", adapterDetail) { EmptyView() }
+                    row("Bluetooth adapter", bluetoothDetail) {
+                        HStack(spacing: 8) {
+                            Button(model.bluetooth.isScanning ? "Scanning…" : "Look for it") {
+                                model.bluetooth.scan()
+                            }
+                            .controlSize(.small)
+                            .disabled(model.bluetooth.isScanning)
+                            ForEach(model.bluetooth.found.filter { !$0.name.hasPrefix("(") }) { device in
+                                Button(device.name) { model.bluetooth.interrogate(device) }
+                                    .controlSize(.small)
+                            }
+                        }
+                    }
                     row("Log what the desk sends", logDetail) {
                         HStack(spacing: 8) {
                             Toggle("", isOn: $model.settings.logSerialTraffic)
@@ -438,6 +451,18 @@ struct SettingsView: View {
             + "opens and closes. For working out what wakes the handset — leave it off otherwise."
         guard model.settings.logSerialTraffic else { return base }
         return base + " \(model.serialLogSize)"
+    }
+
+    /// What the Bluetooth scan has turned up, if anything.
+    private var bluetoothDetail: String {
+        let base = "The F port is meant for a Bluetooth dongle. Over the air there's no shared "
+            + "ground with the Mac, which is what makes the handset click."
+        if model.bluetooth.isScanning { return base + " Scanning…" }
+        guard !model.bluetooth.found.isEmpty else {
+            return base + " \(model.bluetooth.state == "not started" ? "" : model.bluetooth.state)"
+        }
+        let named = model.bluetooth.found.filter { !$0.name.hasPrefix("(") }.count
+        return base + " Found \(model.bluetooth.found.count) nearby, \(named) with a name."
     }
 
     /// The port's own line, including whether it's open at this moment.

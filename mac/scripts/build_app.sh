@@ -48,6 +48,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Intermission looks for the desk's Bluetooth adapter, so it can read the desk's height over the air instead of through a wire spliced into the handset line.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Intermission reads your calendar so it can plan breaks into the gaps between sessions. It never creates or changes an event.</string>
 	<!-- GT Ultra, bundled rather than installed. -->

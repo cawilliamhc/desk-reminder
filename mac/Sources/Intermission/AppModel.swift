@@ -75,6 +75,7 @@ final class AppModel {
     /// The card being edited in Settings.
     var editingIntermissionID: String?
     let calendars = Calendars()
+    let bluetooth = DeskBluetooth()
     var settings: DeskCore.Settings { didSet { settingsChanged(oldValue) } }
 
     private var coach: Coach
@@ -142,6 +143,15 @@ final class AppModel {
         if let day = ProcessInfo.processInfo.environment["INTERMISSION_PLAN_DAY"],
            let planDay = PlanDay(rawValue: day) {
             self.planDay = planDay
+        }
+        // Look for the dongle at launch, for working out whether it's
+        // something we can talk to at all.
+        if ProcessInfo.processInfo.environment["INTERMISSION_BLE_SCAN"] != nil {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                self?.bluetooth.interrogateDeskWhenFound = true
+                self?.bluetooth.scan()
+            }
         }
         schedule.reload()
         start()
