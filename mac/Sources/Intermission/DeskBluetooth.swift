@@ -30,6 +30,8 @@ final class DeskBluetooth: NSObject {
     private(set) var found: [Found] = []
     /// True while a dongle is connected and subscribed to the height stream.
     private(set) var isListening = false
+    /// What we're connected to, for saying so rather than offering a search.
+    private(set) var deviceName: String?
     /// Heights, decoded by the same parser the wire uses: the dongle hands
     /// over the box's own frames, untouched.
     var onHeight: ((Double, Date) -> Void)?
@@ -245,6 +247,7 @@ extension DeskBluetooth: @preconcurrency CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         log.note("connected to \(peripheral.name ?? "(unnamed)") — asking what it has")
         listening = peripheral
+        deviceName = peripheral.name
         state = "connected to \(peripheral.name ?? "the dongle")"
         rememberDevice?(peripheral.identifier)
         peripheral.delegate = self

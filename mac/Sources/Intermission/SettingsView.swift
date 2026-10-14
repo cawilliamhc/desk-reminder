@@ -147,15 +147,26 @@ struct SettingsView: View {
                         .frame(width: 110)
                     }
                     row("Bluetooth adapter", bluetoothDetail) {
-                        HStack(spacing: 8) {
+                        if model.bluetooth.isListening {
+                            Text(model.bluetooth.deviceName ?? "Connected")
+                                .font(Theme.ui(12)).foregroundStyle(Theme.muted)
+                        } else {
                             Button(model.bluetooth.isScanning ? "Scanning…" : "Look for it") {
                                 model.bluetooth.scan()
                             }
                             .controlSize(.small)
                             .disabled(model.bluetooth.isScanning)
-                            ForEach(model.bluetooth.found.filter { !$0.name.hasPrefix("(") }) { device in
-                                Button(device.name) { model.bluetooth.interrogate(device) }
-                                    .controlSize(.small)
+                        }
+                    }
+                    // Anything found goes underneath, one to a line. Across
+                    // the row they were squeezed to a letter each.
+                    if !model.bluetooth.isListening, !nearbyDevices.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(nearbyDevices) { device in
+                                Button("\(device.name)  ·  \(device.rssi) dBm") {
+                                    model.bluetooth.interrogate(device)
+                                }
+                                .controlSize(.small)
                             }
                         }
                     }
@@ -449,12 +460,24 @@ struct SettingsView: View {
     private var bluetoothDetail: String {
         let base = "The F port is meant for a Bluetooth dongle. Over the air there's no shared "
             + "ground with the Mac, which is what makes the handset click."
+        // A connected dongle stops advertising, so a scan now would come
+        // back empty and look like a fault.
+        if model.bluetooth.isListening { return base + " Connected, so there's nothing to find." }
         if model.bluetooth.isScanning { return base + " Scanning…" }
         guard !model.bluetooth.found.isEmpty else {
             return base + " \(model.bluetooth.state == "not started" ? "" : model.bluetooth.state)"
         }
-        let named = model.bluetooth.found.filter { !$0.name.hasPrefix("(") }.count
-        return base + " Found \(model.bluetooth.found.count) nearby, \(named) with a name."
+        return base + " Found \(nearbyDevices.count) with a name, of \(model.bluetooth.found.count)."
+    }
+
+    /// Named devices, strongest first and only a handful: the dongle is a
+    /// metre away, so if it isn't near the top it isn't there.
+    private var nearbyDevices: [DeskBluetooth.Found] {
+        model.bluetooth.found
+            .filter { !$0.name.hasPrefix("(") && !$0.name.isEmpty }
+            .sorted { $0.rssi > $1.rssi }
+            .prefix(6)
+            .map { $0 }
     }
 
     /// Says what the app can see right now, so the setting isn't a promise
