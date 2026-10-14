@@ -149,7 +149,13 @@ struct NowCard: View {
         case .running(let kind, _):
             [Action(title: "I'm back", shortcut: .return) { model.finishIntermission(kind.id) }]
         case .note:
-            [Action(title: "Done", shortcut: .return) { model.noteDone() }]
+            // The note window is the moment the button is actually for.
+            model.canRaise
+                ? [
+                    Action(title: "Raise now", shortcut: "r") { model.raiseDesk() },
+                    Action(title: "Done", shortcut: .return) { model.noteDone() },
+                ]
+                : [Action(title: "Done", shortcut: .return) { model.noteDone() }]
         case .session:
             // The phase moves on by itself when the published hour ends;
             // this is for the hour that ended early.

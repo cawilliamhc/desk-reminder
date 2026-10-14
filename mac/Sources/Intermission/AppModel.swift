@@ -238,6 +238,23 @@ final class AppModel {
             bluetooth.rememberDevice = { [weak self] id in
                 Task { @MainActor in self?.settings.bluetoothDeviceID = id.uuidString }
             }
+            // One probe frame, the moment the stream is live, then never
+            // again: the setting clears itself so a frame can't fire twice.
+            bluetooth.onReady = { [weak self] in
+                guard let self, let probe = settings.probeCommand, let command = UInt8(exactly: probe)
+                else { return }
+                let data = (settings.probeData ?? []).compactMap { UInt8(exactly: $0) }
+                let times = max(1, min(settings.probeRepeat ?? 1, 20))   // never more than three seconds
+                settings.probeCommand = nil
+                settings.probeData = nil
+                settings.probeRepeat = nil
+                Task { @MainActor in
+                    for _ in 0..<times {
+                        self.bluetooth.send(command: command, data: data)
+                        try? await Task.sleep(for: .milliseconds(150))
+                    }
+                }
+            }
             bluetooth.listen()
             return
         }
@@ -511,6 +528,65 @@ final class AppModel {
     func revealSerialLog() {
         NSWorkspace.shared.activateFileViewerSelecting([SerialLogFile.url])
     }
+
+    // MARK: - Raising the desk
+
+    /// True while the app is driving the desk up.
+    private(set) var isRaising = false
+    /// Why it stopped, for the line under the button.
+    private(set) var raiseOutcome: String?
+
+    /// Whether a raise is even possible: only over the air, and only when
+    /// the desk is down. The wire never transmits - that rule stands.
+    var canRaise: Bool {
+        settings.deskSource == .bluetooth && bluetooth.isListening && isStanding == false
+    }
+
+    /// "Raise now": up-pulses until the desk passes the standing height.
+    ///
+    /// Up is momentary on this controller - it moves while the frames keep
+    /// coming and stops the moment they don't - so the desk's safety is the
+    /// same as taking a finger off the button. Four things end it: the
+    /// target, a stall, silence from the desk, and thirty seconds. Never
+    /// automatic, and never from a timer: this runs because he pressed it.
+    func raiseDesk() {
+        guard canRaise, !isRaising else { return }
+        isRaising = true
+        raiseOutcome = nil
+        let target = settings.standingThreshold
+        let deadline = Date().addingTimeInterval(30)
+        var best = height ?? 0
+        var movedAt = Date()
+
+        Task { @MainActor in
+            while isRaising {
+                guard Date() < deadline else { raiseOutcome = "Stopped after 30 seconds."; break }
+                guard let now = height else { raiseOutcome = "Stopped — no height coming back."; break }
+                if now >= target { raiseOutcome = String(format: "Up at %.1f\".", now); break }
+                if now > best + 0.05 {
+                    best = now
+                    movedAt = Date()
+                } else if Date().timeIntervalSince(movedAt) > 2 {
+                    raiseOutcome = String(format: "Stopped — it isn't moving (%.1f\").", now)
+                    break
+                }
+                bluetooth.send(command: Self.upCommand)
+                try? await Task.sleep(for: .milliseconds(150))
+            }
+            isRaising = false
+        }
+    }
+
+    /// Takes the finger off the button.
+    func stopRaising() {
+        guard isRaising else { return }
+        isRaising = false
+        raiseOutcome = "Stopped."
+    }
+
+    /// The one command this app ever sends, learned by watching the desk
+    /// move 27.4" → 29.0" while it was repeated.
+    private static let upCommand: UInt8 = 0x01
 
     /// Whether a height source is actually open at this moment.
     var isListening: Bool {

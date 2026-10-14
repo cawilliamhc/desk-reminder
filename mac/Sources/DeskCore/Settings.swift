@@ -110,6 +110,16 @@ public struct Settings: Codable, Equatable, Sendable {
     /// and lights up now and then, and the hour with a client is the worst
     /// possible time for it.
     public var closePortInSession: Bool = true
+    /// One command byte to send to the box the moment the height stream is
+    /// up, then forgotten. For learning a protocol nobody published, one
+    /// frame at a time, with somebody watching the desk.
+    public var probeCommand: Int?
+    /// The data bytes that go with it, if any.
+    public var probeData: [Int]?
+    /// How many times to repeat it, 150ms apart. Up and down are momentary
+    /// on these controllers: a lone frame is ignored, and the desk stops the
+    /// moment the frames stop.
+    public var probeRepeat: Int?
     /// Where the desk's height comes from.
     public var deskSource: DeskSource = .usb
     /// The dongle we found last time, so it doesn't have to be hunted for.
@@ -167,6 +177,9 @@ public struct Settings: Codable, Equatable, Sendable {
         calendarColor = try? c.decodeIfPresent(String.self, forKey: .calendarColor)
         logSerialTraffic = c.value(.logSerialTraffic, or: blank.logSerialTraffic)
         deskSource = c.value(.deskSource, or: blank.deskSource)
+        probeCommand = try? c.decodeIfPresent(Int.self, forKey: .probeCommand)
+        probeData = try? c.decodeIfPresent([Int].self, forKey: .probeData)
+        probeRepeat = try? c.decodeIfPresent(Int.self, forKey: .probeRepeat)
         bluetoothDeviceID = try? c.decodeIfPresent(String.self, forKey: .bluetoothDeviceID)
         version = c.value(.version, or: 0)
     }

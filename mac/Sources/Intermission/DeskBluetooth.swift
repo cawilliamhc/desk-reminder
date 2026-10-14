@@ -37,6 +37,8 @@ final class DeskBluetooth: NSObject {
     var rememberDevice: ((UUID) -> Void)?
     /// The one to reconnect to, from last time.
     var knownDevice: UUID?
+    /// Called once the height stream is live and the box can be spoken to.
+    var onReady: (() -> Void)?
 
     private var parser = FrameParser()
     private var listening: CBPeripheral?
@@ -80,6 +82,36 @@ final class DeskBluetooth: NSObject {
         } else {
             start()
         }
+    }
+
+    /// Sends one frame to the box, through the dongle's command channel.
+    ///
+    /// The first thing this app has ever transmitted. Everything up to now
+    /// was receive-only by construction, because a stray edge on the wire
+    /// made the handset click - but the dongle's whole purpose is two-way
+    /// traffic, and it is the desk's own fitted accessory doing the talking.
+    ///
+    /// Frames are built, not typed: `F1 F1 cmd len data… checksum 7E`, with
+    /// the checksum the sum of everything from cmd to the last data byte.
+    /// A frame assembled wrongly is a frame whose meaning nobody knows.
+    func send(command: UInt8, data: [UInt8] = []) {
+        guard let peripheral = listening,
+              let characteristic = peripheral.services?
+                .first(where: { $0.uuid == CBUUID(string: "FE60") })?
+                .characteristics?
+                .first(where: { $0.uuid == CBUUID(string: "FE61") })
+        else {
+            log.note("send: not connected, or no FE61 to write to")
+            return
+        }
+        let body: [UInt8] = [command, UInt8(data.count)] + data
+        var total = 0
+        for byte in body { total += Int(byte) }
+        let checksum = UInt8(total & 0xFF)
+        let frame: [UInt8] = [0xF1, 0xF1] + body + [checksum, 0x7E]
+        let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
+        log.note("SENDING → \(hex)")
+        peripheral.writeValue(Data(frame), for: characteristic, type: .withResponse)
     }
 
     /// Stops listening and lets go of the dongle.
@@ -254,7 +286,16 @@ extension DeskBluetooth: @preconcurrency CBPeripheralDelegate {
         if characteristic.uuid == CBUUID(string: "FE62"), characteristic.isNotifying {
             isListening = true
             state = "listening over Bluetooth"
+            onReady?()
         }
+    }
+
+    /// Whether the box accepted what we sent.
+    func peripheral(
+        _ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?
+    ) {
+        log.note("    write to \(characteristic.uuid.uuidString): "
+                 + (error.map { "refused — \($0.localizedDescription)" } ?? "accepted"))
     }
 
     func peripheral(

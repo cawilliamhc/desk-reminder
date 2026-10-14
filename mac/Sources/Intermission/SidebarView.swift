@@ -71,11 +71,35 @@ struct SidebarView: View {
                 .foregroundStyle(Theme.ink)
             Text(deskSubtitle)
                 .font(Theme.ui(11))
-                .foregroundStyle(model.adapterStatus == .adapterNotFound ? Theme.calendar : Theme.primary)
+                .foregroundStyle(isHealthy ? Theme.primary : Theme.calendar)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // Only ever a button. The desk is never raised by a timer, a
+            // reminder, or anything else deciding on his behalf.
+            if model.isRaising {
+                Button("Stop") { model.stopRaising() }
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+            } else if model.canRaise {
+                Button("Raise now") { model.raiseDesk() }
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+            }
+            if let outcome = model.raiseOutcome, !model.isRaising {
+                Text(outcome).font(Theme.ui(10)).foregroundStyle(Theme.muted)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardStyle()
+    }
+
+    /// Green when a height is actually arriving from somewhere.
+    private var isHealthy: Bool {
+        model.settings.deskSource == .bluetooth
+            ? model.bluetooth.isListening
+            : model.adapterStatus != .adapterNotFound
     }
 
     private var deskSubtitle: String {
@@ -88,10 +112,16 @@ struct SidebarView: View {
         // desk is still up or down, we just haven't seen it move.
         let unconfirmed = model.heightIsAssumed && model.isStanding != nil ? ", last known" : ""
         // A port closed on purpose isn't a missing adapter, and shouldn't
-        // read like a fault.
-        let line = model.settings.listenToDesk && !model.isListening
-            ? "quiet for this session"
-            : model.adapterStatus.label
+        // read like a fault. Nor is the USB adapter's absence worth
+        // reporting when the height is coming over the air.
+        let line: String
+        if model.settings.deskSource == .bluetooth {
+            line = model.bluetooth.isListening ? "over Bluetooth" : model.bluetooth.state
+        } else if model.settings.listenToDesk && !model.isListening {
+            line = "quiet for this session"
+        } else {
+            line = model.adapterStatus.label
+        }
         return "\(state)\(unconfirmed) · \(line)"
     }
 }
