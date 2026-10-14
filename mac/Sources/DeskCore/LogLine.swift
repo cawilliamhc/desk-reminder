@@ -1,15 +1,12 @@
 import Foundation
 
-/// A record of what actually came down the wire, for working out what wakes
-/// the handset.
+/// Lines for a log that has to be read by eye afterwards: a time, what
+/// happened, and the bytes if there were any.
 ///
-/// The app reports heights and throws the rest away, so nobody has ever seen
-/// what else the box says - and "the handset clicks and lights up by itself"
-/// is a claim about exactly that. If the box sends something of its own
-/// accord, it's in here with a time against it. If the line is silent at the
-/// moment of a click, the wake came from somewhere else entirely, and this
-/// says that too.
-public enum SerialLog {
+/// Written for the serial tap, which is gone. It stayed because the
+/// Bluetooth log wants exactly the same thing, and a timestamp that reads
+/// 14:32:07.145 is worth more than one that reads 1760452327.145.
+public enum LogLine {
     /// Beyond this the file is trimmed back to half, oldest first. A day of
     /// a desk moving is a few kilobytes; a fault that chatters could be
     /// anything.
@@ -31,7 +28,7 @@ public enum SerialLog {
             + "\(bytes.count == 1 ? "byte" : "bytes")  \(hex)\n"
     }
 
-    /// "14:32:07.145  --  port opened (cu.usbserial-BH01097T)"
+    /// "14:32:07.145  --  connected to Branch Desk 21BFCA"
     public static func event(_ text: String, at date: Date, calendar: Calendar = .current) -> String {
         "\(timestamp(date, calendar: calendar))  --  \(text)\n"
     }

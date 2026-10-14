@@ -36,7 +36,6 @@ final class AppModel {
     static var sessionsFile: URL { Paths.sessions }
 
     var selectedView: View = .today
-    private(set) var adapterStatus: SerialMonitor.Status = .adapterNotFound
     private(set) var lastReport: Date?
     private(set) var timeline: DeskTimeline
     private(set) var today: DayRecord
@@ -87,8 +86,6 @@ final class AppModel {
     private let settingsStore: SettingsStore
     private let presence = Presence()
     private let notifier = Notifier()
-    private let serialLog = SerialLogFile()
-    private var monitor: SerialMonitor?
     private var lastCheck = Date()
     private var lastSaved = Date.distantPast
     /// The schedule as it was on the last tick, for noticing a change.
@@ -228,84 +225,30 @@ final class AppModel {
     }
 
     private func startListening() {
-        // Over the air there is no wire on the handset's line and no shared
-        // ground, which is the whole reason this exists.
-        guard settings.deskSource == .usb else {
-            bluetooth.knownDevice = settings.bluetoothDeviceID.flatMap(UUID.init(uuidString:))
-            bluetooth.onHeight = { [weak self] height, at in
-                Task { @MainActor in self?.heightReported(height, at: at) }
-            }
-            bluetooth.rememberDevice = { [weak self] id in
-                Task { @MainActor in self?.settings.bluetoothDeviceID = id.uuidString }
-            }
-            bluetooth.listen()
-            return
+        bluetooth.knownDevice = settings.bluetoothDeviceID.flatMap(UUID.init(uuidString:))
+        bluetooth.onHeight = { [weak self] height, at in
+            Task { @MainActor in self?.heightReported(height, at: at) }
         }
-        guard monitor == nil else { return }
-        let log: SerialLogFile? = settings.logSerialTraffic ? serialLog : nil
-        log?.note("port opening")
-
-        var sink: (@Sendable ([UInt8], Date) -> Void)?
-        if let log {
-            sink = { bytes, at in log.bytes(bytes, at: at) }
+        bluetooth.rememberDevice = { [weak self] id in
+            Task { @MainActor in self?.settings.bluetoothDeviceID = id.uuidString }
         }
+        bluetooth.listen()
+    }
 
-        let monitor = SerialMonitor(
-            onHeight: { [weak self] height, at in
-                Task { @MainActor in self?.heightReported(height, at: at) }
-            },
-            onStatus: { [weak self] status in
-                log?.note("adapter: \(status.detail)")
-                Task { @MainActor in self?.adapterStatus = status }
-            },
-            onBytes: sink
-        )
-        monitor.start()
-        self.monitor = monitor
+    private func stopListening() {
+        bluetooth.disconnect()
     }
 
     /// The belt to the Bluetooth braces: if we're meant to be reading the
     /// desk and we aren't, start again. Checked once a minute, which is
     /// often enough to matter and rare enough to cost nothing.
     private func keepTheDeskConnected(_ now: Date) {
-        guard settings.deskSource == .bluetooth, settings.listenToDesk,
+        guard settings.listenToDesk,
               !bluetooth.isListening, !bluetooth.isScanning,
               now.timeIntervalSince(lastPortChange) >= 60
         else { return }
         lastPortChange = now
         startListening()
-    }
-
-    /// Opens and closes the port around sessions.
-    ///
-    /// The handset wakes up now and then - a click and a lit screen - and
-    /// the likeliest cause is this app's tap sitting on the line the box
-    /// talks to it on. Whatever the cause, a client's hour is the worst time
-    /// for it, and the port is worth almost nothing during one: the desk is
-    /// down, and the box only speaks while the desk moves.
-    ///
-    /// A minute has to pass before it changes its mind again, so a
-    /// microphone that flickers can't turn the port into a metronome.
-    private func followTheSessionWithThePort(_ now: Date) {
-        guard settings.deskSource == .usb else { return }
-        let wanted = settings.listening(inSession: isInSession, micInUse: isInCall)
-        guard wanted != (monitor != nil) else { return }
-        guard now.timeIntervalSince(lastPortChange) >= 60 else { return }
-        lastPortChange = now
-        wanted ? startListening() : stopListening()
-    }
-
-    private func stopListening() {
-        if settings.deskSource == .bluetooth {
-            bluetooth.disconnect()
-            return
-        }
-        if settings.logSerialTraffic, monitor != nil {
-            serialLog.note("port closing\(isInSession ? " — session" : isInCall ? " — microphone live" : "")")
-        }
-        monitor?.stop()
-        monitor = nil
-        adapterStatus = .adapterNotFound
     }
 
     private func start() {
@@ -319,7 +262,6 @@ final class AppModel {
 
     private func heightReported(_ height: Double, at now: Date) {
         lastReport = now
-        if settings.logSerialTraffic { serialLog.note(String(format: "height %.1f\"", height), at: now) }
         timeline.report(height: height, at: now)
         heights.record(standing: height >= settings.standingThreshold, at: now)
         LastHeight.save(height, directory: Self.supportDirectory)
@@ -334,7 +276,6 @@ final class AppModel {
         // Cheap enough to ask every second: it's a device property, not the
         // audio itself.
         isInCall = Microphone.isInUse
-        followTheSessionWithThePort(now)
         keepTheDeskConnected(now)
 
         let present = presence.isPresent
@@ -512,19 +453,6 @@ final class AppModel {
     /// it's the one in the diary and whether or not it has finished on paper.
     private(set) var isInCall = false
 
-    var hasSerialLog: Bool { FileManager.default.fileExists(atPath: SerialLogFile.url.path) }
-
-    /// "12 KB so far", for the line under the switch.
-    var serialLogSize: String {
-        let size = (try? FileManager.default.attributesOfItem(atPath: SerialLogFile.url.path)[.size]) as? Int
-        guard let size, size > 0 else { return "Nothing logged yet." }
-        return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file) + " so far."
-    }
-
-    func revealSerialLog() {
-        NSWorkspace.shared.activateFileViewerSelecting([SerialLogFile.url])
-    }
-
     // MARK: - Raising the desk
 
     /// True while the app is driving the desk up.
@@ -532,11 +460,9 @@ final class AppModel {
     /// Why it stopped, for the line under the button.
     private(set) var raiseOutcome: String?
 
-    /// Whether a raise is even possible: only over the air, and only when
-    /// the desk is down. The wire never transmits - that rule stands.
-    var canRaise: Bool {
-        settings.deskSource == .bluetooth && bluetooth.isListening && isStanding == false
-    }
+    /// Whether a raise is even possible: only when the desk is down, and
+    /// only when it's actually being read.
+    var canRaise: Bool { bluetooth.isListening && isStanding == false }
 
     /// "Raise now": up-pulses until the desk passes the standing height.
     ///
@@ -604,13 +530,11 @@ final class AppModel {
     }
 
     /// The one command this app ever sends, learned by watching the desk
-    /// move 27.4" → 29.0" while it was repeated.
+    /// move 27.4" to 29.0" while it was repeated.
     private static let upCommand: UInt8 = 0x01
 
-    /// Whether a height source is actually open at this moment.
-    var isListening: Bool {
-        settings.deskSource == .bluetooth ? bluetooth.isListening : monitor != nil
-    }
+    /// Whether the desk is actually being read at this moment.
+    var isListening: Bool { bluetooth.isListening }
 
     /// Opens the window on tomorrow's plan - what the evening notification does.
     func showTomorrow() {
@@ -1695,27 +1619,9 @@ final class AppModel {
         timeline.standingThreshold = settings.standingThreshold
         presence.idleThreshold = TimeInterval(settings.idleMinutes * 60)
         settingsStore.save(settings)
-        if settings.deskSource != old.deskSource {
-            // Swap sources cleanly: let go of one before taking the other.
-            if old.deskSource == .usb { monitor?.stop(); monitor = nil } else { bluetooth.disconnect() }
-            adapterStatus = .adapterNotFound
-            lastPortChange = .distantPast
-            if settings.listenToDesk { startListening() }
-        }
-        if settings.listenToDesk != old.listenToDesk || settings.closePortInSession != old.closePortInSession {
+        if settings.listenToDesk != old.listenToDesk {
             lastPortChange = .distantPast          // a switch he flicked shouldn't wait
-        }
-        if settings.logSerialTraffic != old.logSerialTraffic {
-            // The hook is handed to the monitor when it's made, so the port
-            // has to come round again for it to take.
-            stopListening()
-            lastPortChange = .distantPast
-            if settings.logSerialTraffic {
-                serialLog.note("logging on — every byte from here, with the time it arrived")
-            } else {
-                serialLog.note("logging off")
-                serialLog.close()
-            }
+            settings.listenToDesk ? startListening() : stopListening()
         }
         if settings.intermissions != old.intermissions || settings.calendarIDs != old.calendarIDs
             || settings.calendarColor != old.calendarColor

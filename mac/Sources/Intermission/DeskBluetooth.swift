@@ -360,7 +360,7 @@ final class BluetoothLog: @unchecked Sendable {
     private let queue = DispatchQueue(label: "desk.ble.log")
 
     func note(_ text: String) {
-        let line = SerialLog.event(text, at: Date())
+        let line = LogLine.event(text, at: Date())
         queue.async {
             try? FileManager.default.createDirectory(at: Paths.support, withIntermediateDirectories: true)
             if let handle = try? FileHandle(forWritingTo: Self.url) {

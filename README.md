@@ -3,60 +3,41 @@
 A menu-bar app that tracks how much the standing desk is up versus down, and
 reminds me to raise it to write my notes after sessions.
 
-## Hardware (receive-only)
+## Hardware
 
-Jiecang JCB35NH4A control box, RJ12 **F** port, via a screw-terminal breakout, to a
-DSD TECH SH-U09F2 (FTDI, 5 V):
+Jiecang JCB35NH4A control box, **Bluetooth adapter in the RJ12 F port** — the port
+Jiecang's own support says exists for a dongle. The app finds it by name ("Branch Desk
+…"), connects, and subscribes to the one characteristic that talks:
 
-| Adapter | F-port terminal |
+| | |
 |---|---|
-| GND | 2 |
-| RXD | 4 (box → handset height reports) |
-| TXD | not connected |
-| VCC | not connected |
+| Service | `FE60` (a Lierda module, `L-BTMEB95-07014-03`) |
+| `FE61` | write — the command channel |
+| `FE62` | notify — the box's frames, relayed untouched |
 
-Height frames on pin 4, 9600 8N1: `F2 F2 01 03 <hi> <lo> 07 <checksum> 7E`, height in
-tenths of an inch, checksum = sum of cmd, len and data bytes. The box only sends while
-the desk moves (plus ~1–2 s after), so height is unknown until the desk first moves.
+The dongle is a transparent bridge, so what arrives is the control box's own serial
+frame: `F2 F2 01 03 <hi> <lo> 07 <checksum> 7E`, height in tenths of an inch, checksum
+the sum of everything from the command byte to the last data byte. The box only speaks
+while the desk is moving, so the height is unknown until it first moves.
 
-**Nothing is ever sent to the desk.** Transmitting makes the handset click and light up;
-the F port also ignores the known Jiecang commands on pins 3 and 5, so control would need
-an RJ45 breakout on the handset cable anyway.
+**One command is ever sent.** `F1 F1 01 00 01 7E` is up, and it is momentary: the desk
+moves while the frames keep arriving at about seven a second and stops the moment they
+don't. "Raise now" pulses it until the desk is near the height in Settings and lets it
+coast the rest, measuring that coast each time. It runs because the button was pressed —
+never on a timer, never after a reminder.
 
-## The app
+Do not guess at other command bytes. `F1 F1 1B 02 <hi> <lo>`, tried as "go to height",
+put the box into its ASR re-home state: it drove to its lowest point and needed the down
+button held to recover.
 
-`mac/` is a Swift package: `DeskCore` holds the logic (frame parser, sit/stand timeline,
-coach, day store, settings, session schedule) and `Intermission` is the SwiftUI app.
+### The wire this replaced
 
-```sh
-cd mac
-swift test
-./scripts/build_app.sh        # builds build/Intermission.app, ad-hoc signed
-```
-
-Install by copying `build/Intermission.app` to `/Applications` — notifications only work
-from a registered bundle, so run it from there rather than the build folder.
-
-### Behaviour
-
-- Standing time counts only while the Mac is unlocked and in use: the desk is shared, and
-  someone else's standing is not mine.
-- After a session ends: if the desk is below the standing height, nudge, nudge once more
-  after 5 minutes, give up after 20. Reaching standing height counts. Silent during a
-  session, while paused, and on rest days.
-- Standing share excludes session time from the denominator.
-- Settings: standing height and goal, note reminders, skip virtual sessions, sound, desk
-  days, coach tone, pause, open at login.
-
-### Notifications and Focus
-
-A Focus queues notifications silently. Breaking through needs the time-sensitive
-entitlement, which needs a provisioning profile from a paid developer account — signed
-ad hoc with it, macOS refuses to launch the app. So add **Intermission** to the Focus's
-allowed apps (Settings has a button for that pane).
-
-`INTERMISSION_TEST_NOTIFY=1 open /Applications/Intermission.app` posts one notification
-at launch, for testing.
+The first version read the same frames from F-port pin 4 through an FTDI adapter, with
+ground on pin 2 and nothing connected to TXD. It worked, and it made the handset wake up
+— a click and a lit screen, several times a day. Two days of logging showed the line is
+silent unless the desk is moving, so it was never data; a resistor in the signal line
+changed nothing; unplugging it stopped it. The cause was the shared ground between the
+Mac and the control box, which is the one thing Bluetooth doesn't have.
 
 ## Session times
 

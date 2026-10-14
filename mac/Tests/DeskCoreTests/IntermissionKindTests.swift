@@ -203,26 +203,6 @@ private func day(_ number: Int) -> Date {
     #expect(settings.soundAllowed(inSession: true, micInUse: true))
 }
 
-// MARK: - When the port is held open
-
-@Test func thePortClosesForASessionAndOpensAfterIt() {
-    var settings = Settings()
-    settings.listenToDesk = true
-    #expect(settings.listening(inSession: false, micInUse: false))
-    #expect(!settings.listening(inSession: true, micInUse: false))
-    #expect(!settings.listening(inSession: false, micInUse: true))
-}
-
-@Test func theMasterSwitchStillWins() {
-    var settings = Settings()
-    settings.listenToDesk = false
-    #expect(!settings.listening(inSession: false, micInUse: false))
-
-    settings.listenToDesk = true
-    settings.closePortInSession = false
-    #expect(settings.listening(inSession: true, micInUse: true))
-}
-
 // MARK: - The one colour that isn't from the palette
 
 @Test func aCalendarColourIsKeptAndCanBeCleared() throws {
@@ -240,32 +220,32 @@ private func day(_ number: Int) -> Date {
     #expect(store.load().calendarColor == nil)
 }
 
-// MARK: - The serial log
+// MARK: - The log file
 
 @Test func aReceivedLineSaysWhenAndWhat() {
     let at = calendar.date(from: DateComponents(
         year: 2026, month: 10, day: 6, hour: 14, minute: 32, second: 7, nanosecond: 145_000_000
     ))!
-    let line = SerialLog.received([0xF2, 0xF2, 0x01, 0x03], at: at, calendar: calendar)
+    let line = LogLine.received([0xF2, 0xF2, 0x01, 0x03], at: at, calendar: calendar)
     // The millisecond is whatever a Date can carry it back as; the shape is
     // the point.
     #expect(line.hasPrefix("14:32:07."))
     #expect(line.hasSuffix("  rx  4 bytes  F2 F2 01 03\n"))
-    #expect(SerialLog.received([0x7E], at: at, calendar: calendar).contains("1 byte  7E"))
+    #expect(LogLine.received([0x7E], at: at, calendar: calendar).contains("1 byte  7E"))
 }
 
 @Test func anEventLineSaysWhatTheAppDid() {
     let at = calendar.date(from: DateComponents(
         year: 2026, month: 10, day: 6, hour: 9, minute: 5, second: 0, nanosecond: 0
     ))!
-    #expect(SerialLog.event("port closing — session", at: at, calendar: calendar)
+    #expect(LogLine.event("port closing — session", at: at, calendar: calendar)
             == "09:05:00.000  --  port closing — session\n")
 }
 
 @Test func theLogIsTrimmedFromTheOldEndAndAtALineBreak() {
     let lines = (1...500).map { "line \($0)\n" }.joined()
     let data = Data(lines.utf8)
-    let trimmed = SerialLog.trimmed(data, max: 1_000)
+    let trimmed = LogLine.trimmed(data, max: 1_000)
     #expect(trimmed.count <= 500)
     let text = String(decoding: trimmed, as: UTF8.self)
     #expect(text.hasSuffix("line 500\n"))          // the tail is what's kept
@@ -275,7 +255,7 @@ private func day(_ number: Int) -> Date {
 
 @Test func aSmallLogIsLeftAlone() {
     let data = Data("14:32:07.145  rx  1 byte  7E\n".utf8)
-    #expect(SerialLog.trimmed(data) == data)
+    #expect(LogLine.trimmed(data) == data)
 }
 
 // MARK: - Raising the desk

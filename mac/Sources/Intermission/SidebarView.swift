@@ -95,12 +95,8 @@ struct SidebarView: View {
         .cardStyle()
     }
 
-    /// Green when a height is actually arriving from somewhere.
-    private var isHealthy: Bool {
-        model.settings.deskSource == .bluetooth
-            ? model.bluetooth.isListening
-            : model.adapterStatus != .adapterNotFound
-    }
+    /// Green when a height is actually arriving.
+    private var isHealthy: Bool { model.bluetooth.isListening }
 
     private var deskSubtitle: String {
         let state = switch model.isStanding {
@@ -111,17 +107,7 @@ struct SidebarView: View {
         // "Last known" belongs to the height, not to a separate state: the
         // desk is still up or down, we just haven't seen it move.
         let unconfirmed = model.heightIsAssumed && model.isStanding != nil ? ", last known" : ""
-        // A port closed on purpose isn't a missing adapter, and shouldn't
-        // read like a fault. Nor is the USB adapter's absence worth
-        // reporting when the height is coming over the air.
-        let line: String
-        if model.settings.deskSource == .bluetooth {
-            line = model.bluetooth.isListening ? "over Bluetooth" : model.bluetooth.state
-        } else if model.settings.listenToDesk && !model.isListening {
-            line = "quiet for this session"
-        } else {
-            line = model.adapterStatus.label
-        }
+        let line = model.bluetooth.isListening ? "over Bluetooth" : model.bluetooth.state
         return "\(state)\(unconfirmed) · \(line)"
     }
 }

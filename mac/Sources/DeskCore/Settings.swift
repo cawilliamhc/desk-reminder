@@ -4,16 +4,6 @@ public enum Tone: String, Codable, CaseIterable, Sendable {
     case dry, warm, playful
 }
 
-/// How the height gets here.
-///
-/// The wire reads the line the box uses to talk to its handset, which means
-/// a shared ground with the Mac - and that ground loop is what wakes the
-/// handset. The dongle in the F port sends the same frames over the air,
-/// with no electrical connection to anything of ours at all.
-public enum DeskSource: String, Codable, CaseIterable, Sendable {
-    case usb, bluetooth
-}
-
 /// When time opens up: offer what to do with it, or just leave the gap.
 public enum CalendarChange: String, Codable, CaseIterable, Sendable {
     case ask, leaveOpen
@@ -60,8 +50,8 @@ public enum Weekday: Int, Codable, CaseIterable, Sendable {
 /// Everything the Settings view writes. Stage 1 covers Desk, Notes and Coach;
 /// intermissions and calendars join in later stages.
 public struct Settings: Codable, Equatable, Sendable {
-    /// Whether to hold the serial port open at all. Off, the app still plans
-    /// and nudges; it just doesn't know the desk's height.
+    /// Whether to read the desk at all. Off, the app still plans and nudges;
+    /// it just doesn't know the desk's height.
     public var listenToDesk: Bool = true
     public var standingThreshold: Double = 40
     /// Share of at-desk time (sessions excluded) to aim for.
@@ -106,10 +96,6 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Keep the sound to himself while a session is running. The reminder
     /// still arrives; it just doesn't make a noise into somebody's hour.
     public var silentInSession: Bool = true
-    /// Close the serial port while a session is running. The handset clicks
-    /// and lights up now and then, and the hour with a client is the worst
-    /// possible time for it.
-    public var closePortInSession: Bool = true
     /// Where "Raise now" aims for. The standing threshold is what counts as
     /// standing; this is where he actually likes to work.
     public var raiseToHeight: Double = 44.0
@@ -125,13 +111,8 @@ public struct Settings: Codable, Equatable, Sendable {
         guard measured > 0, measured < 8 else { return }
         raiseCoastInches = ((raiseCoastInches + measured) / 2 * 10).rounded() / 10
     }
-    /// Where the desk's height comes from.
-    public var deskSource: DeskSource = .usb
     /// The dongle we found last time, so it doesn't have to be hunted for.
     public var bluetoothDeviceID: String?
-    /// Write everything the box sends to serial.log, with times. Off by
-    /// default: it's for a question, not for every day.
-    public var logSerialTraffic: Bool = false
     /// What colour a calendar event is drawn in, as "#rrggbb". Nil is the
     /// palette's terracotta. Unlike an intermission's colour this one isn't
     /// from the sixteen: the calendar is Carl's own furniture, and he can
@@ -178,10 +159,7 @@ public struct Settings: Codable, Equatable, Sendable {
         rebalanceAfterSkipMinutes = c.value(.rebalanceAfterSkipMinutes, or: blank.rebalanceAfterSkipMinutes)
         dayStartsMinutes = c.value(.dayStartsMinutes, or: blank.dayStartsMinutes)
         silentInSession = c.value(.silentInSession, or: blank.silentInSession)
-        closePortInSession = c.value(.closePortInSession, or: blank.closePortInSession)
         calendarColor = try? c.decodeIfPresent(String.self, forKey: .calendarColor)
-        logSerialTraffic = c.value(.logSerialTraffic, or: blank.logSerialTraffic)
-        deskSource = c.value(.deskSource, or: blank.deskSource)
         raiseToHeight = c.value(.raiseToHeight, or: blank.raiseToHeight)
         raiseCoastInches = c.value(.raiseCoastInches, or: blank.raiseCoastInches)
         bluetoothDeviceID = try? c.decodeIfPresent(String.self, forKey: .bluetoothDeviceID)
@@ -241,19 +219,6 @@ public struct Settings: Codable, Equatable, Sendable {
     public func soundAllowed(inSession: Bool, micInUse: Bool) -> Bool {
         guard sound else { return false }
         guard silentInSession else { return true }
-        return !inSession && !micInUse
-    }
-
-    /// Whether the app should be holding the serial port open.
-    ///
-    /// Almost nothing is lost by closing it during a session: the desk is
-    /// down for one by definition, and session time is left out of the
-    /// day's totals either way. The box only speaks while the desk moves, so
-    /// a closed port during an hour the desk doesn't move costs no reading
-    /// at all.
-    public func listening(inSession: Bool, micInUse: Bool) -> Bool {
-        guard listenToDesk else { return false }
-        guard closePortInSession else { return true }
         return !inSession && !micInUse
     }
 

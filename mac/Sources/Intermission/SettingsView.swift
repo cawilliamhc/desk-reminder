@@ -137,12 +137,6 @@ struct SettingsView: View {
                     row("Listen to the desk", "Off, the port is closed and the height is whatever it last was.") {
                         Toggle("", isOn: $model.settings.listenToDesk).labelsHidden().toggleStyle(.switch)
                     }
-                    row("Close the port during sessions", portDetail) {
-                        Toggle("", isOn: $model.settings.closePortInSession)
-                            .labelsHidden().toggleStyle(.switch)
-                            .disabled(!model.settings.listenToDesk)
-                    }
-                    row("Adapter", adapterDetail) { EmptyView() }
                     row("Raise now goes to", raiseDetail) {
                         Picker("", selection: $model.settings.raiseToHeight) {
                             ForEach([40.0, 42.0, 43.0, 44.0, 45.0], id: \.self) {
@@ -151,15 +145,6 @@ struct SettingsView: View {
                         }
                         .labelsHidden()
                         .frame(width: 110)
-                    }
-                    row("Read the desk over", sourceDetail) {
-                        Picker("", selection: $model.settings.deskSource) {
-                            Text("USB adapter").tag(DeskSource.usb)
-                            Text("Bluetooth").tag(DeskSource.bluetooth)
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                        .frame(width: 220)
                     }
                     row("Bluetooth adapter", bluetoothDetail) {
                         HStack(spacing: 8) {
@@ -170,16 +155,6 @@ struct SettingsView: View {
                             .disabled(model.bluetooth.isScanning)
                             ForEach(model.bluetooth.found.filter { !$0.name.hasPrefix("(") }) { device in
                                 Button(device.name) { model.bluetooth.interrogate(device) }
-                                    .controlSize(.small)
-                            }
-                        }
-                    }
-                    row("Log what the desk sends", logDetail) {
-                        HStack(spacing: 8) {
-                            Toggle("", isOn: $model.settings.logSerialTraffic)
-                                .labelsHidden().toggleStyle(.switch)
-                            if model.hasSerialLog {
-                                Button("Show") { model.revealSerialLog() }
                                     .controlSize(.small)
                             }
                         }
@@ -438,13 +413,20 @@ struct SettingsView: View {
 
     private func fmt(_ value: Double) -> String { String(format: "%.1f", value) }
 
+    /// What the button aims for, and where it actually lets go.
+    private var raiseDetail: String {
+        "Up-pulses stop at \(fmt(model.settings.stopPulsingAt))″ and the desk coasts the rest, "
+            + "which it measures for itself after every raise. "
+            + "Only when you press it — never on a timer."
+    }
+
+    /// The dongle, and when it last said anything.
     private var adapterDetail: String {
-        guard model.isListening || !model.settings.listenToDesk else {
-            return "The port is closed while a session is running. It opens again after."
-        }
-        var detail = model.adapterStatus.detail
+        var detail = model.bluetooth.isListening
+            ? "Reading the desk over Bluetooth."
+            : model.bluetooth.state
         if let last = model.lastReport {
-            detail += " · last report \(Int(Date().timeIntervalSince(last)))s ago"
+            detail += " · last height \(Int(Date().timeIntervalSince(last)))s ago"
         }
         return detail
     }
@@ -463,29 +445,6 @@ struct SettingsView: View {
         return "sessions.json · \(sessions.count) today, \(virtual) virtual · times and modality only"
     }
 
-    /// What the log is for, and how big it has got.
-    private var logDetail: String {
-        let base = "Every byte that arrives, with the time it arrived, plus when the port "
-            + "opens and closes. For working out what wakes the handset — leave it off otherwise."
-        guard model.settings.logSerialTraffic else { return base }
-        return base + " \(model.serialLogSize)"
-    }
-
-    /// What the button aims for, and where it actually lets go.
-    private var raiseDetail: String {
-        "Up-pulses stop at \(fmt(model.settings.stopPulsingAt))″ and the desk coasts the rest. "
-            + "Only over Bluetooth, only when you press it — never on a timer."
-    }
-
-    /// Which source, and why it might matter.
-    private var sourceDetail: String {
-        let base = "The wire shares a ground with the Mac, and that is what wakes the handset. "
-            + "The dongle in the F port sends the same frames over the air, with nothing "
-            + "electrical between the desk and this machine."
-        guard model.settings.deskSource == .bluetooth else { return base }
-        return base + " " + model.bluetooth.state
-    }
-
     /// What the Bluetooth scan has turned up, if anything.
     private var bluetoothDetail: String {
         let base = "The F port is meant for a Bluetooth dongle. Over the air there's no shared "
@@ -496,15 +455,6 @@ struct SettingsView: View {
         }
         let named = model.bluetooth.found.filter { !$0.name.hasPrefix("(") }.count
         return base + " Found \(model.bluetooth.found.count) nearby, \(named) with a name."
-    }
-
-    /// The port's own line, including whether it's open at this moment.
-    private var portDetail: String {
-        let base = "The handset wakes up now and then; a client's hour is the worst time for it. "
-            + "Almost nothing is lost — the desk is down for a session, and the box only "
-            + "speaks while it moves."
-        guard model.settings.listenToDesk else { return base }
-        return base + (model.isListening ? " Right now: open." : " Right now: closed.")
     }
 
     /// Says what the app can see right now, so the setting isn't a promise

@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         // Pure logic: frame decoding, sit/stand tracking, reminder rules. No AppKit,
-        // no serial port, no files - so it can all be tested.
+        // no Bluetooth, no files - so it can all be tested.
         .target(name: "DeskCore"),
         .executableTarget(name: "Intermission", dependencies: ["DeskCore"]),
         .testTarget(name: "DeskCoreTests", dependencies: ["DeskCore"]),
