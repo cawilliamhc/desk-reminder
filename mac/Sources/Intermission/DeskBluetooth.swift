@@ -28,6 +28,18 @@ final class DeskBluetooth: NSObject {
     private(set) var isScanning = false
     private(set) var state = "not started"
     private(set) var found: [Found] = []
+    /// True while a dongle is connected and subscribed to the height stream.
+    private(set) var isListening = false
+    /// Heights, decoded by the same parser the wire uses: the dongle hands
+    /// over the box's own frames, untouched.
+    var onHeight: ((Double, Date) -> Void)?
+    /// Remembered, so the next launch connects rather than searches.
+    var rememberDevice: ((UUID) -> Void)?
+    /// The one to reconnect to, from last time.
+    var knownDevice: UUID?
+
+    private var parser = FrameParser()
+    private var listening: CBPeripheral?
 
     private var central: CBCentralManager?
     private var connecting: CBPeripheral?
@@ -36,6 +48,30 @@ final class DeskBluetooth: NSObject {
     /// Scans for everything advertising nearby. Nothing is filtered by
     /// service, because we don't yet know what the adapter advertises - and
     /// a dongle that advertises nothing of ours is itself an answer.
+    /// Opens the height stream: straight to the dongle we know, or a scan
+    /// to find it the first time.
+    func listen() {
+        interrogateDeskWhenFound = true
+        if central == nil {
+            central = CBCentralManager(delegate: self, queue: .main)
+            return
+        }
+        connectKnownOrScan()
+    }
+
+    private func connectKnownOrScan() {
+        guard let central else { return }
+        if let knownDevice,
+           let peripheral = central.retrievePeripherals(withIdentifiers: [knownDevice]).first {
+            log.note("reconnecting to the dongle we know")
+            listening = peripheral
+            peripheral.delegate = self
+            central.connect(peripheral)
+            return
+        }
+        start()
+    }
+
     func scan() {
         found = []
         log.note("scan requested")
@@ -44,6 +80,14 @@ final class DeskBluetooth: NSObject {
         } else {
             start()
         }
+    }
+
+    /// Stops listening and lets go of the dongle.
+    func disconnect() {
+        if let listening { central?.cancelPeripheralConnection(listening) }
+        listening = nil
+        isListening = false
+        log.note("disconnected on purpose")
     }
 
     /// Set when the scan should go straight on to asking the desk what it
@@ -92,7 +136,11 @@ extension DeskBluetooth: @preconcurrency CBCentralManagerDelegate {
         switch central.state {
         case .poweredOn:
             state = "ready"
-            start()
+            if interrogateDeskWhenFound, knownDevice != nil {
+                connectKnownOrScan()
+            } else {
+                start()
+            }
         case .unauthorized:
             state = "Bluetooth permission refused — System Settings › Privacy & Security › Bluetooth"
         case .poweredOff:
@@ -132,6 +180,10 @@ extension DeskBluetooth: @preconcurrency CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         log.note("connected to \(peripheral.name ?? "(unnamed)") — asking what it has")
+        listening = peripheral
+        state = "connected to \(peripheral.name ?? "the dongle")"
+        rememberDevice?(peripheral.identifier)
+        peripheral.delegate = self
         peripheral.discoverServices(nil)
     }
 
@@ -146,6 +198,8 @@ extension DeskBluetooth: @preconcurrency CBCentralManagerDelegate {
     func centralManager(
         _ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?
     ) {
+        isListening = false
+        state = "reconnecting"
         log.note("DISCONNECTED: \(error?.localizedDescription ?? "it hung up") — reconnecting")
         central.connect(peripheral)
     }
@@ -196,12 +250,27 @@ extension DeskBluetooth: @preconcurrency CBPeripheralDelegate {
             + (characteristic.isNotifying ? "ON" : "off")
             + (error.map { " — \($0.localizedDescription)" } ?? "")
         )
+        // FE62 is the one that carries the box's frames.
+        if characteristic.uuid == CBUUID(string: "FE62"), characteristic.isNotifying {
+            isListening = true
+            state = "listening over Bluetooth"
+        }
     }
 
     func peripheral(
         _ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?
     ) {
         guard let data = characteristic.value else { return }
+
+        // The dongle relays the box's own frames, so the parser that reads
+        // the wire reads this too, byte for byte.
+        if characteristic.uuid == CBUUID(string: "FE62") {
+            let now = Date()
+            for frame in parser.feed([UInt8](data)) {
+                if let height = frame.height { onHeight?(height, now) }
+            }
+        }
+
         let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
         // Device-information values are text; the vendor service is bytes.
         let text = String(data: data, encoding: .utf8).flatMap { readable in

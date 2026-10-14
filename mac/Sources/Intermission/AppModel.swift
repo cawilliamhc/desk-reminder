@@ -228,6 +228,19 @@ final class AppModel {
     }
 
     private func startListening() {
+        // Over the air there is no wire on the handset's line and no shared
+        // ground, which is the whole reason this exists.
+        guard settings.deskSource == .usb else {
+            bluetooth.knownDevice = settings.bluetoothDeviceID.flatMap(UUID.init(uuidString:))
+            bluetooth.onHeight = { [weak self] height, at in
+                Task { @MainActor in self?.heightReported(height, at: at) }
+            }
+            bluetooth.rememberDevice = { [weak self] id in
+                Task { @MainActor in self?.settings.bluetoothDeviceID = id.uuidString }
+            }
+            bluetooth.listen()
+            return
+        }
         guard monitor == nil else { return }
         let log: SerialLogFile? = settings.logSerialTraffic ? serialLog : nil
         log?.note("port opening")
@@ -262,6 +275,7 @@ final class AppModel {
     /// A minute has to pass before it changes its mind again, so a
     /// microphone that flickers can't turn the port into a metronome.
     private func followTheSessionWithThePort(_ now: Date) {
+        guard settings.deskSource == .usb else { return }
         let wanted = settings.listening(inSession: isInSession, micInUse: isInCall)
         guard wanted != (monitor != nil) else { return }
         guard now.timeIntervalSince(lastPortChange) >= 60 else { return }
@@ -270,6 +284,10 @@ final class AppModel {
     }
 
     private func stopListening() {
+        if settings.deskSource == .bluetooth {
+            bluetooth.disconnect()
+            return
+        }
         if settings.logSerialTraffic, monitor != nil {
             serialLog.note("port closing\(isInSession ? " — session" : isInCall ? " — microphone live" : "")")
         }
@@ -494,8 +512,10 @@ final class AppModel {
         NSWorkspace.shared.activateFileViewerSelecting([SerialLogFile.url])
     }
 
-    /// Whether the serial port is open at this moment.
-    var isListening: Bool { monitor != nil }
+    /// Whether a height source is actually open at this moment.
+    var isListening: Bool {
+        settings.deskSource == .bluetooth ? bluetooth.isListening : monitor != nil
+    }
 
     /// Opens the window on tomorrow's plan - what the evening notification does.
     func showTomorrow() {
@@ -1580,6 +1600,13 @@ final class AppModel {
         timeline.standingThreshold = settings.standingThreshold
         presence.idleThreshold = TimeInterval(settings.idleMinutes * 60)
         settingsStore.save(settings)
+        if settings.deskSource != old.deskSource {
+            // Swap sources cleanly: let go of one before taking the other.
+            if old.deskSource == .usb { monitor?.stop(); monitor = nil } else { bluetooth.disconnect() }
+            adapterStatus = .adapterNotFound
+            lastPortChange = .distantPast
+            if settings.listenToDesk { startListening() }
+        }
         if settings.listenToDesk != old.listenToDesk || settings.closePortInSession != old.closePortInSession {
             lastPortChange = .distantPast          // a switch he flicked shouldn't wait
         }

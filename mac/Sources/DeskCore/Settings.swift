@@ -4,6 +4,16 @@ public enum Tone: String, Codable, CaseIterable, Sendable {
     case dry, warm, playful
 }
 
+/// How the height gets here.
+///
+/// The wire reads the line the box uses to talk to its handset, which means
+/// a shared ground with the Mac - and that ground loop is what wakes the
+/// handset. The dongle in the F port sends the same frames over the air,
+/// with no electrical connection to anything of ours at all.
+public enum DeskSource: String, Codable, CaseIterable, Sendable {
+    case usb, bluetooth
+}
+
 /// When time opens up: offer what to do with it, or just leave the gap.
 public enum CalendarChange: String, Codable, CaseIterable, Sendable {
     case ask, leaveOpen
@@ -100,6 +110,10 @@ public struct Settings: Codable, Equatable, Sendable {
     /// and lights up now and then, and the hour with a client is the worst
     /// possible time for it.
     public var closePortInSession: Bool = true
+    /// Where the desk's height comes from.
+    public var deskSource: DeskSource = .usb
+    /// The dongle we found last time, so it doesn't have to be hunted for.
+    public var bluetoothDeviceID: String?
     /// Write everything the box sends to serial.log, with times. Off by
     /// default: it's for a question, not for every day.
     public var logSerialTraffic: Bool = false
@@ -152,6 +166,8 @@ public struct Settings: Codable, Equatable, Sendable {
         closePortInSession = c.value(.closePortInSession, or: blank.closePortInSession)
         calendarColor = try? c.decodeIfPresent(String.self, forKey: .calendarColor)
         logSerialTraffic = c.value(.logSerialTraffic, or: blank.logSerialTraffic)
+        deskSource = c.value(.deskSource, or: blank.deskSource)
+        bluetoothDeviceID = try? c.decodeIfPresent(String.self, forKey: .bluetoothDeviceID)
         version = c.value(.version, or: 0)
     }
 

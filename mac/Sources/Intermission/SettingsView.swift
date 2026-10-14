@@ -143,6 +143,15 @@ struct SettingsView: View {
                             .disabled(!model.settings.listenToDesk)
                     }
                     row("Adapter", adapterDetail) { EmptyView() }
+                    row("Read the desk over", sourceDetail) {
+                        Picker("", selection: $model.settings.deskSource) {
+                            Text("USB adapter").tag(DeskSource.usb)
+                            Text("Bluetooth").tag(DeskSource.bluetooth)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .frame(width: 220)
+                    }
                     row("Bluetooth adapter", bluetoothDetail) {
                         HStack(spacing: 8) {
                             Button(model.bluetooth.isScanning ? "Scanning…" : "Look for it") {
@@ -451,6 +460,15 @@ struct SettingsView: View {
             + "opens and closes. For working out what wakes the handset — leave it off otherwise."
         guard model.settings.logSerialTraffic else { return base }
         return base + " \(model.serialLogSize)"
+    }
+
+    /// Which source, and why it might matter.
+    private var sourceDetail: String {
+        let base = "The wire shares a ground with the Mac, and that is what wakes the handset. "
+            + "The dongle in the F port sends the same frames over the air, with nothing "
+            + "electrical between the desk and this machine."
+        guard model.settings.deskSource == .bluetooth else { return base }
+        return base + " " + model.bluetooth.state
     }
 
     /// What the Bluetooth scan has turned up, if anything.
