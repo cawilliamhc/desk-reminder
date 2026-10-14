@@ -546,8 +546,10 @@ final class AppModel {
                 guard Date() < deadline else { raiseOutcome = "Stopped after 30 seconds."; break }
                 guard let now = height else { raiseOutcome = "Stopped — no height coming back."; break }
                 if now >= target {
-                    // Stop here and let it coast the rest of the way.
+                    // Stop here and let it coast the rest of the way, then
+                    // find out how far that turned out to be.
                     raiseOutcome = String(format: "Up — let go at %.1f\".", now)
+                    measureCoast(from: now)
                     break
                 }
                 if now > best + 0.05 {
@@ -561,6 +563,23 @@ final class AppModel {
                 try? await Task.sleep(for: .milliseconds(150))
             }
             isRaising = false
+        }
+    }
+
+    /// Waits for the desk to settle, then learns how far it carried on.
+    ///
+    /// The desk is the only thing that knows this number, and it changes
+    /// with what's on it - so the app asks after every raise rather than
+    /// holding an opinion from September.
+    private func measureCoast(from letGo: Double) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            guard let settled = height, settled > letGo else { return }
+            settings.learnedCoast(settled - letGo)
+            raiseOutcome = String(
+                format: "Up at %.1f\" — let go at %.1f\", coasted %.1f\".",
+                settled, letGo, settled - letGo
+            )
         }
     }
 

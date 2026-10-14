@@ -113,10 +113,18 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Where "Raise now" aims for. The standing threshold is what counts as
     /// standing; this is where he actually likes to work.
     public var raiseToHeight: Double = 44.0
-    /// How far the desk carries on after the last up-frame. Measured, not
-    /// guessed: 29.0" to 43.1" overshot a 40" target by three inches, and
-    /// the height reports lag the desk by a fraction of a second on top.
-    public var raiseCoastInches: Double = 2.5
+    /// How far the desk carries on after the last up-frame - partly the
+    /// desk's own momentum, partly the height reports arriving a moment
+    /// behind the desk. Measured rather than guessed, and re-measured after
+    /// every raise: a loaded desk coasts differently from an empty one.
+    public var raiseCoastInches: Double = 3.2
+
+    /// Folds what just happened into what we thought, half and half, so one
+    /// odd raise can't throw the next one off.
+    public mutating func learnedCoast(_ measured: Double) {
+        guard measured > 0, measured < 8 else { return }
+        raiseCoastInches = ((raiseCoastInches + measured) / 2 * 10).rounded() / 10
+    }
     /// Where the desk's height comes from.
     public var deskSource: DeskSource = .usb
     /// The dongle we found last time, so it doesn't have to be hunted for.

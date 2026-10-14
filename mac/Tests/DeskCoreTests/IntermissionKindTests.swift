@@ -299,3 +299,15 @@ private func day(_ number: Int) -> Date {
     // is the threshold itself.
     #expect(settings.stopPulsingAt == 40)
 }
+
+@Test func theCoastIsLearnedFromWhatTheDeskActuallyDid() {
+    var settings = Settings()
+    settings.raiseCoastInches = 2.5
+    settings.learnedCoast(3.2)            // 41.5" let go, 44.7" settled
+    #expect(settings.raiseCoastInches == 2.9)
+
+    // One wild reading - a desk nudged by hand mid-coast - is ignored.
+    settings.learnedCoast(40)
+    settings.learnedCoast(-2)
+    #expect(settings.raiseCoastInches == 2.9)
+}
