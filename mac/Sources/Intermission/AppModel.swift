@@ -264,6 +264,18 @@ final class AppModel {
         self.monitor = monitor
     }
 
+    /// The belt to the Bluetooth braces: if we're meant to be reading the
+    /// desk and we aren't, start again. Checked once a minute, which is
+    /// often enough to matter and rare enough to cost nothing.
+    private func keepTheDeskConnected(_ now: Date) {
+        guard settings.deskSource == .bluetooth, settings.listenToDesk,
+              !bluetooth.isListening, !bluetooth.isScanning,
+              now.timeIntervalSince(lastPortChange) >= 60
+        else { return }
+        lastPortChange = now
+        startListening()
+    }
+
     /// Opens and closes the port around sessions.
     ///
     /// The handset wakes up now and then - a click and a lit screen - and
@@ -323,6 +335,7 @@ final class AppModel {
         // audio itself.
         isInCall = Microphone.isInUse
         followTheSessionWithThePort(now)
+        keepTheDeskConnected(now)
 
         let present = presence.isPresent
         if present != isPresent {

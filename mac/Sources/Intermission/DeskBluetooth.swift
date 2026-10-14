@@ -54,6 +54,7 @@ final class DeskBluetooth: NSObject {
     /// to find it the first time.
     func listen() {
         interrogateDeskWhenFound = true
+        wantsConnection = true
         if central == nil {
             central = CBCentralManager(delegate: self, queue: .main)
             return
@@ -69,6 +70,13 @@ final class DeskBluetooth: NSObject {
             listening = peripheral
             peripheral.delegate = self
             central.connect(peripheral)
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(30))
+                guard let self, wantsConnection, !isListening, !isScanning else { return }
+                log.note("it hasn't turned up — scanning instead")
+                central.cancelPeripheralConnection(peripheral)
+                start()
+            }
             return
         }
         start()
@@ -115,8 +123,21 @@ final class DeskBluetooth: NSObject {
         peripheral.writeValue(Data(frame), for: characteristic, type: .withResponse)
     }
 
+    /// Looks again in half a minute, for as long as we're meant to be
+    /// connected. Scanning costs little; a stale height costs the app.
+    private func retryShortly() {
+        state = "looking for the desk"
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            guard let self, wantsConnection, !isListening, !isScanning else { return }
+            log.note("still not connected — looking again")
+            connectKnownOrScan()
+        }
+    }
+
     /// Stops listening and lets go of the dongle.
     func disconnect() {
+        wantsConnection = false
         if let listening { central?.cancelPeripheralConnection(listening) }
         listening = nil
         isListening = false
@@ -126,6 +147,11 @@ final class DeskBluetooth: NSObject {
     /// Set when the scan should go straight on to asking the desk what it
     /// offers, rather than waiting to be told which one it is.
     var interrogateDeskWhenFound = false
+    /// True while we're meant to be connected, so a scan that comes up
+    /// empty tries again instead of giving up. A reboot left the app
+    /// hunting once, finding nothing in its twenty seconds, and then
+    /// sitting there for forty minutes with a stale height on screen.
+    private(set) var wantsConnection = false
 
     func stop() {
         central?.stopScan()
@@ -133,7 +159,12 @@ final class DeskBluetooth: NSObject {
         log.note("scan stopped — \(found.count) device(s)")
         guard interrogateDeskWhenFound,
               let desk = found.first(where: { $0.name.lowercased().contains("desk") })
-        else { return }
+        else {
+            // Not there this time. A dongle can be quiet for a while after a
+            // connection drops, so the answer is to look again, not to stop.
+            if wantsConnection { retryShortly() }
+            return
+        }
         log.note("the desk looks like \(desk.name) — asking it what it has")
         interrogate(desk)
     }
